@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "gl_error.h"
 #include "gamepad.h"
+#include "render.h"
 
 #define WINDOW_WIDTH   800
 #define WINDOW_HEIGHT  600
@@ -25,9 +26,7 @@ static void error_callback(int error, const char *description)
 
 static void reset_viewport_callback(GLFWwindow *window, int width, int height)
 {
-  glViewport(0, 0, width, height);
-  //float aspect = (float) width / height;
-  //mat4_frustum(mat_projection, -aspect, aspect, -1.0, 1.0, 1.0, 1200.0);
+  render_set_viewport(width, height);
 }
 
 static void joystick_callback(int joy, int event)
@@ -62,7 +61,7 @@ static int init_gfx()
 {
   debug("- Initializing GLFW...\n");
   if (! glfwInit()) {
-    debug("* ERROR: cant initialize GLFW\n");
+    debug("* ERROR: can't initialize GLFW\n");
     return -1;
   }
   gfx_initialized = 1;
@@ -70,12 +69,12 @@ static int init_gfx()
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+  //glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
   
   window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_NAME, NULL, NULL);
   if (! window) {
     glfwTerminate();
-    debug("* ERROR: cant create window\n");
+    debug("* ERROR: can't create window\n");
     return -1;
   }
   glfwMakeContextCurrent(window);
@@ -86,7 +85,7 @@ static int init_gfx()
 
   debug("- Initializing OpenGL extensions...\n");
   if (! gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
-    debug("* ERROR: cant load OpenGL extensions\n");
+    debug("* ERROR: can't load OpenGL extensions\n");
     return -1;
   }
 
@@ -97,19 +96,6 @@ static void cleanup_gfx(void)
 {
   if (gfx_initialized)
     glfwTerminate();
-}
-
-static void render_setup(void)
-{
-  glClearColor(0.0, 0.0, 0.4, 1.0);
-  glEnable(GL_DEPTH_TEST);
-}
-
-static void render_screen(void)
-{
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  
-  glfwSwapBuffers(window);
 }
 
 static void handle_gamepad(void)
@@ -144,9 +130,11 @@ int main(void)
     goto err;
 
   detect_gamepad(&pad);
+
+  if (render_setup() != 0)
+    goto err;
   
   debug("- Running main loop...\n");
-  render_setup();
   while (1) {
     glfwPollEvents();
     if (glfwWindowShouldClose(window))
@@ -154,6 +142,7 @@ int main(void)
     
     handle_input();
     render_screen();
+    glfwSwapBuffers(window);
   }
   ret = 0;
   
