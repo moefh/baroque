@@ -367,6 +367,14 @@ void mat4_mul_vec3(float *restrict ret, const float *m, const float *restrict v)
   ret[2] = m[ 8]*v[2] + m[ 9]*v[2] + m[10]*v[2];
 }
 
+void vec4_load(float *v, float x, float y, float z, float w)
+{
+  v[0] = x;
+  v[1] = y;
+  v[2] = z;
+  v[3] = w;
+}
+
 void mat3_copy(float *restrict dest, const float *restrict src)
 {
   memcpy(dest, src, 9*sizeof(float));

@@ -37,6 +37,9 @@ void mat4_mul_left(float *restrict a, const float *restrict b);
 void mat4_mul_vec4(float *restrict ret, const float *restrict m, const float *restrict v);
 void mat4_mul_vec3(float *restrict ret, const float *restrict m, const float *restrict v);
 
+// vec4:
+void vec4_load(float *v, float x, float y, float z, float w);
+
 // mat3:
 void mat3_copy(float *restrict dest, const float *restrict src);
 void mat3_id(float *m);
