@@ -14,7 +14,7 @@ CC = gcc
 CFLAGS = $(OS_CFLAGS) -O2 -Wall -I../include
 LDFLAGS = $(OS_LDFLAGS)
 
-OBJS = main.o render.o shader.o debug.o glad.o gl_error.o image.o gamepad.o
+OBJS = main.o render.o glb.o shader.o debug.o glad.o gl_error.o image.o matrix.o gamepad.o
 LIBS = $(OS_LIBS) -lm
 
 all: game
