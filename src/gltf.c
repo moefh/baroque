@@ -8,6 +8,13 @@
 #include "gltf.h"
 #include "matrix.h"
 
+//#define DEBUG_GLTF_READER
+#ifdef DEBUG_GLTF_READER
+#define debug_log printf
+#else
+#define debug_log(s,...)
+#endif
+
 /* ================================================================ */
 /* JSON parser */
 /* ================================================================ */
@@ -140,7 +147,7 @@ static int skip_json_number(struct GLTF_READER *reader)
 static int skip_json_value(struct GLTF_READER *reader)
 {
   skip_json_spaces(reader);
-  //printf("skipping json value '%.20s'\n", reader->json);
+  //debug_log("skipping json value '%.20s'\n", reader->json);
 
   if (strncmp(reader->json, "false", sizeof("false")-1) == 0) {
     reader->json += sizeof("false")-1;
@@ -439,7 +446,7 @@ static int read_node_prop(struct GLTF_READER *reader, const char *name, void *da
       return 1;
     info->has_matrix = 1;
   } else {
-    printf("-> skipping 'node.%s'\n", name);
+    debug_log("-> skipping 'node.%s'\n", name);
     return skip_json_value(reader);
   }
   return 0;
@@ -448,8 +455,8 @@ static int read_node_prop(struct GLTF_READER *reader, const char *name, void *da
 static int read_nodes_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_NODES) {
-    printf("* WARNING: skipping node %d: too many nodes!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many nodes (%d)\n", index);
+    return 1;
   }
   struct GLTF_NODE *node = &reader->gltf.nodes[index];
   struct JSON_NODE_INFO info = {
@@ -471,11 +478,11 @@ static int read_nodes_element(struct GLTF_READER *reader, int index, void *data)
   
   if (! info.has_matrix) {
     if (info.has_rotation)
-      printf("TODO: apply rotation to node matrix\n");
+      debug_log("TODO: apply rotation to node matrix\n");
     if (info.has_scale)
-      printf("TODO: apply scale to node matrix\n");
+      debug_log("TODO: apply scale to node matrix\n");
     if (info.has_translation)
-      printf("TODO: apply translation to node matrix\n");
+      debug_log("TODO: apply translation to node matrix\n");
   }
   return 0;
 }
@@ -487,15 +494,15 @@ static int read_buffer_prop(struct GLTF_READER *reader, const char *name, void *
   if (strcmp(name, "byteLength") == 0)
     return read_json_u32(reader, &buffer->byte_length);
 
-  printf("-> skipping 'buffer.%s'\n", name);
+  debug_log("-> skipping 'buffer.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_buffers_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_BUFFERS) {
-    printf("* WARNING: skipping buffer %d: too many buffers!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many buffers (%d)\n", index);
+    return 1;
   }
   struct GLTF_BUFFER *buffer = &reader->gltf.buffers[index];
 
@@ -518,15 +525,15 @@ static int read_buffer_view_prop(struct GLTF_READER *reader, const char *name, v
   if (strcmp(name, "target") == 0)
     return read_json_u16(reader, &buffer_view->target);
   
-  printf("-> skipping 'bufferView.%s'\n", name);
+  debug_log("-> skipping 'bufferView.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_buffer_views_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_BUFFER_VIEWS) {
-    printf("* WARNING: skipping buffer view %d: too many buffer views!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many buffer views (%d)\n", index);
+    return 1;
   }
   struct GLTF_BUFFER_VIEW *buffer_view = &reader->gltf.buffer_views[index];
   buffer_view->byte_offset = 0;
@@ -536,7 +543,7 @@ static int read_buffer_views_element(struct GLTF_READER *reader, int index, void
   
   return read_json_object(reader, read_buffer_view_prop, buffer_view);
   //int ret = read_json_object(reader, read_buffer_view_prop, buffer_view);
-  //printf("got buffer view for buffer %d, offset=%-5d len=%-5d target=%d\n",
+  //debug_log("got buffer view for buffer %d, offset=%-5d len=%-5d target=%d\n",
   //       buffer_view->buffer, buffer_view->byte_offset, buffer_view->byte_length, buffer_view->target);
   //return ret;
 }
@@ -554,15 +561,15 @@ static int read_sampler_prop(struct GLTF_READER *reader, const char *name, void 
   if (strcmp(name, "wrapT") == 0)
     return read_json_u16(reader, &sampler->wrap_t);
 
-  printf("-> skipping 'sampler.%s'\n", name);
+  debug_log("-> skipping 'sampler.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_samplers_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_SAMPLERS) {
-    printf("* WARNING: skipping sampler %d: too many samplers!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many samplers (%d)\n", index);
+    return 1;
   }
   struct GLTF_SAMPLER *sampler = &reader->gltf.samplers[index];
   sampler->mag_filter = GLTF_SAMPLER_FILTER_LINEAR;
@@ -592,19 +599,19 @@ static int read_image_prop(struct GLTF_READER *reader, const char *name, void *d
       image->mime_type = GLTF_IMAGE_MIME_TYPE_PNG;
       return 0;
     }
-    printf("* ERROR: invalid image mime type: '%s'\n", mime_type);
+    debug_log("* ERROR: invalid image mime type: '%s'\n", mime_type);
     return 1;
   }
   
-  printf("-> skipping 'image.%s'\n", name);
+  debug_log("-> skipping 'image.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_images_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_IMAGES) {
-    printf("* WARNING: skipping image %d: too many images!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many images (%d)\n", index);
+    return 1;
   }
   struct GLTF_IMAGE *image = &reader->gltf.images[index];
   image->buffer_view = 0;
@@ -622,19 +629,19 @@ static int read_scene_prop(struct GLTF_READER *reader, const char *name, void *d
     if (read_u16_vector(reader, scene->nodes, GLTF_MAX_SCENE_NODES, &n_nodes) != 0)
       return 1;
     scene->n_nodes = n_nodes;
-    //printf("-> got %u nodes in scene\n", scene->n_nodes);
+    //debug_log("-> got %u nodes in scene\n", scene->n_nodes);
     return 0;
   }
 
-  printf("-> skipping 'scene.%s'\n", name);
+  debug_log("-> skipping 'scene.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_scenes_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_SCENES) {
-    printf("* WARNING: skipping scene %d: too many scenes!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many scenes (%d)\n", index);
+    return 1;
   }
   struct GLTF_SCENE *scene = &reader->gltf.scenes[index];
   scene->n_nodes = 0;
@@ -657,15 +664,15 @@ static int read_texture_prop(struct GLTF_READER *reader, const char *name, void 
     return 0;
   }
 
-  printf("-> skipping 'texture.%s'\n", name);
+  debug_log("-> skipping 'texture.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_textures_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_TEXTURES) {
-    printf("* WARNING: skipping texture %d: too many textures!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many textures (%d)\n", index);
+    return 1;
   }
   struct GLTF_TEXTURE *texture = &reader->gltf.textures[index];
   texture->sampler = 0;
@@ -684,7 +691,7 @@ static int read_material_texture_prop(struct GLTF_READER *reader, const char *na
   if (strcmp(name, "texCoord") == 0)
     return read_json_u16(reader, &mat_tex->tex_coord);
   
-  printf("-> skipping material texture '%s'\n", name);
+  debug_log("-> skipping material texture '%s'\n", name);
   return skip_json_value(reader);
 }
 
@@ -708,7 +715,7 @@ static int read_material_pbr_prop(struct GLTF_READER *reader, const char *name, 
   if (strcmp(name, "roughnessFactor") == 0)
     return read_json_float(reader, &material->roughness_factor);
   
-  printf("-> skipping 'material.pbrMetallicRoughness.%s'\n", name);
+  debug_log("-> skipping 'material.pbrMetallicRoughness.%s'\n", name);
   return skip_json_value(reader);
 }
 
@@ -749,7 +756,7 @@ static int read_material_prop(struct GLTF_READER *reader, const char *name, void
   if (strcmp(name, "pbrMetallicRoughness") == 0)
     return read_json_object(reader, read_material_pbr_prop, material);
   
-  printf("-> skipping 'material.%s'\n", name);
+  debug_log("-> skipping 'material.%s'\n", name);
   return skip_json_value(reader);
 }
 
@@ -762,8 +769,8 @@ static void init_material_texture(struct GLTF_MATERIAL_TEXTURE *mat_tex)
 static int read_materials_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_MATERIALS) {
-    printf("* WARNING: skipping material %d: too many materials!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many materials (%d)\n", index);
+    return 1;
   }
   struct GLTF_MATERIAL *material = &reader->gltf.materials[index];
   init_material_texture(&material->color_tex);
@@ -812,7 +819,7 @@ static int read_accessor_prop(struct GLTF_READER *reader, const char *name, void
     else if (strcmp(type, "MAT3"  ) == 0) accessor->type = GLTF_ACCESSOR_TYPE_MAT3;
     else if (strcmp(type, "MAT4"  ) == 0) accessor->type = GLTF_ACCESSOR_TYPE_MAT4;
     else {
-      printf("* invalid accessor type: '%s'\n", type);
+      debug_log("* invalid accessor type: '%s'\n", type);
       return 1;
     }
     return 0;
@@ -821,15 +828,15 @@ static int read_accessor_prop(struct GLTF_READER *reader, const char *name, void
   if (strcmp(name, "min") == 0 || strcmp(name, "max") == 0)
     return skip_json_value(reader);
 
-  printf("-> skipping 'accessor.%s'\n", name);
+  debug_log("-> skipping 'accessor.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_accessors_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_ACCESSORS) {
-    printf("* WARNING: skipping accessor %d: too many accessors!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many accessors (%d)\n", index);
+    return 1;
   }
   struct GLTF_ACCESSOR *accessor = &reader->gltf.accessors[index];
   accessor->buffer_view = GLTF_NONE;
@@ -856,7 +863,7 @@ static int read_mesh_prim_attr_prop(struct GLTF_READER *reader, const char *name
   else if (strcmp(name, "TEXCOORD_3") == 0) attrib_num = GLTF_MESH_ATTRIB_TEXCOORD_3;
   else if (strcmp(name, "TEXCOORD_4") == 0) attrib_num = GLTF_MESH_ATTRIB_TEXCOORD_4;
   else {
-    printf("* WARNING: ignoring unknown attribute '%s'\n", name);
+    debug_log("* WARNING: ignoring unknown attribute '%s'\n", name);
     return skip_json_value(reader);
   }
   prim->attribs_present |= 1<<attrib_num;
@@ -879,15 +886,15 @@ static int read_mesh_primitive_prop(struct GLTF_READER *reader, const char *name
   if (strcmp(name, "attributes") == 0)
     return read_json_object(reader, read_mesh_prim_attr_prop, prim);
 
-  printf("-> skipping 'mesh.primitive.%s'\n", name);
+  debug_log("-> skipping 'mesh.primitive.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_mesh_primitives_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_MESH_PRIMITIVES) {
-    printf("* WARNING: skipping mesh primitive %d: too many primitives!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many mesh primitives (%d)\n", index);
+    return 1;
   }
   
   struct GLTF_MESH *mesh = data;
@@ -909,18 +916,17 @@ static int read_mesh_prop(struct GLTF_READER *reader, const char *name, void *da
   if (strcmp(name, "primitives") == 0)
     return read_json_array(reader, read_mesh_primitives_element, mesh);
   
-  printf("-> skipping 'mesh.%s'\n", name);
+  debug_log("-> skipping 'mesh.%s'\n", name);
   return skip_json_value(reader);
 }
 
 static int read_meshes_element(struct GLTF_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_MESHES) {
-    printf("* WARNING: skipping mesh %d: too many meshes!\n", index);
-    return skip_json_value(reader);
+    debug_log("* ERROR: too many meshes (%d)\n", index);
+    return 1;
   }
   struct GLTF_MESH *mesh = &reader->gltf.meshes[index];
-  // TODO: init mesh
 
   return read_json_object(reader, read_mesh_prop, mesh);
 }
@@ -963,7 +969,7 @@ static int read_main_prop(struct GLTF_READER *reader, const char *name, void *da
   if (strcmp(name, "meshes") == 0)
     return read_json_array(reader, read_meshes_element, NULL);
 
-  printf("-> skipping '%s'\n", name);
+  debug_log("-> skipping '%s'\n", name);
   return skip_json_value(reader);
 }
 
