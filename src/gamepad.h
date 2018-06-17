@@ -6,6 +6,8 @@
 #define GAMEPAD_MAX_BUTTONS 16
 #define GAMEPAD_MAX_AXES 8
 
+#define GAMEPAD_DEAD_ZONE 0.1
+
 struct GAMEPAD {
   int id;
   int n_buttons;

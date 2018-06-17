@@ -10,7 +10,7 @@
 #include "gl_error.h"
 #include "gamepad.h"
 #include "render.h"
-#include "model.h"
+#include "game.h"
 
 #define WINDOW_WIDTH   800
 #define WINDOW_HEIGHT  600
@@ -99,27 +99,21 @@ static void cleanup_gfx(void)
     glfwTerminate();
 }
 
-static void handle_gamepad(void)
+static void update_fps_counter(void)
 {
-  if (update_gamepad(&pad) < 0)
+  if (fps_counter.n_frames == 0) {
+    fps_counter.start_time = glfwGetTime();
+    fps_counter.n_frames++;
     return;
-  
-  int buttons_pressed = 0;
-  for (int b = 0; b < pad.n_buttons; b++) {
-    if (pad.btn_pressed[b]) {
-      console("button %d pressed\n", b);
-      buttons_pressed = 1;
-    }
   }
-  if (buttons_pressed) {
-    for (int i = 0; i < pad.n_axes; i++)
-      console("axis %d: %+f\n", i, pad.axis[i]);
-  }
-}
 
-static void handle_input(void)
-{
-  handle_gamepad();
+  double time_elapsed = glfwGetTime() - fps_counter.start_time;
+  if (time_elapsed >= 1.0) {
+    fps_counter.fps = fps_counter.n_frames / time_elapsed;
+    fps_counter.n_frames = 0;
+    return;
+  }
+  fps_counter.n_frames++;
 }
 
 int main(void)
@@ -132,7 +126,9 @@ int main(void)
 
   detect_gamepad(&pad);
 
-  if (render_setup() != 0)
+  int width, height;
+  glfwGetWindowSize(window, &width, &height);
+  if (render_setup((float) width / height) != 0)
     goto err;
   
   debug("- Running main loop...\n");
@@ -141,8 +137,9 @@ int main(void)
     if (glfwWindowShouldClose(window))
       break;
     
-    handle_input();
+    handle_input(&pad);
     render_screen();
+    update_fps_counter();
     glfwSwapBuffers(window);
   }
   ret = 0;

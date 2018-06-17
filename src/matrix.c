@@ -93,6 +93,52 @@ void mat4_id(float *m)
   m[15] = 1.0;
 }
 
+void mat4_load_scale(float *m, float sx, float sy, float sz)
+{
+  m[ 0] = sx;
+  m[ 1] = 0.0;
+  m[ 2] = 0.0;
+  m[ 3] = 0.0;
+  
+  m[ 4] = 0.0;
+  m[ 5] = sy;
+  m[ 6] = 0.0;
+  m[ 7] = 0.0;
+
+  m[ 8] = 0.0;
+  m[ 9] = 0.0;
+  m[10] = sz;
+  m[11] = 0.0;
+
+  m[12] = 0.0;
+  m[13] = 0.0;
+  m[14] = 0.0;
+  m[15] = 1.0;
+}
+
+void mat4_load_translation(float *m, float tx, float ty, float tz)
+{
+  m[ 0] = 1.0;
+  m[ 1] = 0.0;
+  m[ 2] = 0.0;
+  m[ 3] = tx;
+  
+  m[ 4] = 0.0;
+  m[ 5] = 1.0;
+  m[ 6] = 0.0;
+  m[ 7] = ty;
+
+  m[ 8] = 0.0;
+  m[ 9] = 0.0;
+  m[10] = 1.0;
+  m[11] = tz;
+
+  m[12] = 0.0;
+  m[13] = 0.0;
+  m[14] = 0.0;
+  m[15] = 1.0;
+}
+
 void mat4_frustum(float *m, float left, float right, float bottom, float top, float near, float far)
 {
   float width = right - left;
@@ -104,6 +150,29 @@ void mat4_frustum(float *m, float left, float right, float bottom, float top, fl
             0.0,            2.0*near/height, (top+bottom)/height, 0.0,
             0.0,            0.0,             -(far+near)/depth,   -2.0*far*near/depth,
             0.0,            0.0,             -1.0,                0.0);
+}
+
+void mat4_inf_perspective(float *m, float aspect, float yfov, float near)
+{
+  float a = tan(0.5 * yfov);
+  
+  mat4_load(m,
+            1.0/(aspect*a), 0.0,      0.0,   0.0,
+            0.0,            1.0/a,    0.0,   0.0,
+            0.0,            0.0,     -1.0,  -2.0*near,
+            0.0,            0.0,     -1.0,   0.0);
+}
+
+void mat4_perspective(float *m, float aspect, float yfov, float near, float far)
+{
+  float a = tan(0.5 * yfov);
+  float nmf = near - far;
+  
+  mat4_load(m,
+            1.0/(aspect*a), 0.0,    0.0,            0.0,
+            0.0,            1.0/a,  0.0,            0.0,
+            0.0,            0.0,    (far+near)/nmf, 2.0*far*near/nmf,
+            0.0,            0.0,   -1.0,            0.0);
 }
 
 void mat4_look_at(float *m,
@@ -337,19 +406,153 @@ void mat4_mul_left(float *restrict a, const float *restrict b)
   a[15] = x15;
 }
 
-void mat3_from_mat4(float *restrict mat3, const float *restrict mat4)
+int mat4_inverse(float *restrict out, const float *restrict m)
 {
-  mat3[0] = mat4[0];
-  mat3[1] = mat4[1];
-  mat3[2] = mat4[2];
+  float inv[16];
 
-  mat3[3] = mat4[4];
-  mat3[4] = mat4[5];
-  mat3[5] = mat4[6];
+  inv[ 0] = ( m[ 5] * m[10] * m[15] -
+              m[ 5] * m[14] * m[11] -
+              m[ 6] * m[ 9] * m[15] +
+              m[ 6] * m[13] * m[11] +
+              m[ 7] * m[ 9] * m[14] -
+              m[ 7] * m[13] * m[10]);
+  
+  inv[ 1] = (-m[ 1] * m[10] * m[15] +
+              m[ 1] * m[14] * m[11] +
+              m[ 2] * m[ 9] * m[15] -
+              m[ 2] * m[13] * m[11] -
+              m[ 3] * m[ 9] * m[14] +
+              m[ 3] * m[13] * m[10]);
 
-  mat3[6] = mat4[8];
-  mat3[7] = mat4[9];
-  mat3[8] = mat4[10];
+  inv[ 2] = (m[ 1] * m[ 6] * m[15] -
+             m[ 1] * m[14] * m[ 7] -
+             m[ 2] * m[ 5] * m[15] +
+             m[ 2] * m[13] * m[ 7] +
+             m[ 3] * m[ 5] * m[14] -
+             m[ 3] * m[13] * m[ 6]);
+
+  inv[ 3] = (-m[ 1] * m[ 6] * m[11] +
+              m[ 1] * m[10] * m[ 7] +
+              m[ 2] * m[ 5] * m[11] -
+              m[ 2] * m[ 9] * m[ 7] -
+              m[ 3] * m[ 5] * m[10] +
+              m[ 3] * m[ 9] * m[ 6]);
+
+  inv[ 4] = (-m[ 4] * m[10] * m[15] +
+              m[ 4] * m[14] * m[11] +
+              m[ 6] * m[ 8] * m[15] -
+              m[ 6] * m[12] * m[11] -
+              m[ 7] * m[ 8] * m[14] +
+              m[ 7] * m[12] * m[10]);
+
+  inv[ 5] = ( m[ 0] * m[10] * m[15] -
+              m[ 0] * m[14] * m[11] -
+              m[ 2] * m[ 8] * m[15] +
+              m[ 2] * m[12] * m[11] +
+              m[ 3] * m[ 8] * m[14] -
+              m[ 3] * m[12] * m[10]);
+
+  inv[ 6] = (-m[ 0] * m[ 6] * m[15] +
+              m[ 0] * m[14] * m[ 7] +
+              m[ 2] * m[ 4] * m[15] -
+              m[ 2] * m[12] * m[ 7] -
+              m[ 3] * m[ 4] * m[14] +
+              m[ 3] * m[12] * m[ 6]);
+
+  inv[ 7] = (m[ 0] * m[ 6] * m[11] -
+             m[ 0] * m[10] * m[ 7] -
+             m[ 2] * m[ 4] * m[11] +
+             m[ 2] * m[ 8] * m[ 7] +
+             m[ 3] * m[ 4] * m[10] -
+             m[ 3] * m[ 8] * m[ 6]);
+
+  inv[ 8] = (m[ 4] * m[ 9] * m[15] -
+             m[ 4] * m[13] * m[11] -
+             m[ 5] * m[ 8] * m[15] +
+             m[ 5] * m[12] * m[11] +
+             m[ 7] * m[ 8] * m[13] -
+             m[ 7] * m[12] * m[ 9]);
+
+  inv[ 9] = (-m[ 0] * m[ 9] * m[15] +
+              m[ 0] * m[13] * m[11] +
+              m[ 1] * m[ 8] * m[15] -
+              m[ 1] * m[12] * m[11] -
+              m[ 3] * m[ 8] * m[13] +
+              m[ 3] * m[12] * m[ 9]);
+
+  inv[10] = ( m[ 0] * m[ 5] * m[15] -
+              m[ 0] * m[13] * m[ 7] -
+              m[ 1] * m[ 4] * m[15] +
+              m[ 1] * m[12] * m[ 7] +
+              m[ 3] * m[ 4] * m[13] -
+              m[ 3] * m[12] * m[ 5]);
+
+  inv[11] = (-m[ 0] * m[ 5] * m[11] +
+              m[ 0] * m[ 9] * m[ 7] +
+              m[ 1] * m[ 4] * m[11] -
+              m[ 1] * m[ 8] * m[ 7] -
+              m[ 3] * m[ 4] * m[ 9] +
+              m[ 3] * m[ 8] * m[ 5]);
+
+  inv[12] = (-m[ 4] * m[ 9] * m[14] +
+              m[ 4] * m[13] * m[10] +
+              m[ 5] * m[ 8] * m[14] -
+              m[ 5] * m[12] * m[10] -
+              m[ 6] * m[ 8] * m[13] +
+              m[ 6] * m[12] * m[ 9]);
+
+  inv[13] = ( m[ 0] * m[ 9] * m[14] -
+              m[ 0] * m[13] * m[10] -
+              m[ 1] * m[ 8] * m[14] +
+              m[ 1] * m[12] * m[10] +
+              m[ 2] * m[ 8] * m[13] -
+              m[ 2] * m[12] * m[ 9]);
+
+  inv[14] = (-m[ 0] * m[ 5] * m[14] +
+              m[ 0] * m[13] * m[ 6] +
+              m[ 1] * m[ 4] * m[14] -
+              m[ 1] * m[12] * m[ 6] -
+              m[ 2] * m[ 4] * m[13] +
+              m[ 2] * m[12] * m[ 5]);
+
+  inv[15] = ( m[ 0] * m[ 5] * m[10] -
+              m[ 0] * m[ 9] * m[ 6] -
+              m[ 1] * m[ 4] * m[10] +
+              m[ 1] * m[ 8] * m[ 6] +
+              m[ 2] * m[ 4] * m[ 9] -
+              m[ 2] * m[ 8] * m[ 5]);
+
+  double det = m[0] * inv[0] + m[4] * inv[1] + m[8] * inv[2] + m[12] * inv[3];
+  if (det == 0.0)
+    return 1;
+
+  det = 1.0 / det;
+  for (int i = 0; i < 16; i++)
+    out[i] = inv[i] * det;
+  return 0;
+}
+
+void mat4_transpose(float *restrict out, const float *restrict m)
+{
+  out[ 0] = m[ 0];
+  out[ 1] = m[ 4];
+  out[ 2] = m[ 8];
+  out[ 3] = m[12];
+
+  out[ 4] = m[ 1];
+  out[ 5] = m[ 5];
+  out[ 6] = m[ 9];
+  out[ 7] = m[13];
+
+  out[ 8] = m[ 2];
+  out[ 9] = m[ 6];
+  out[10] = m[10];
+  out[11] = m[14];
+
+  out[12] = m[ 3];
+  out[13] = m[ 7];
+  out[14] = m[11];
+  out[15] = m[15];
 }
 
 void mat4_mul_vec4(float *restrict ret, const float *restrict m, const float *restrict v)
@@ -393,6 +596,47 @@ void mat3_id(float *m)
   m[6] = 0.0;
   m[7] = 0.0;
   m[8] = 1.0;
+}
+
+int mat3_inverse(float *restrict out, float *restrict m)
+{
+  float inv[9];
+
+  inv[0] =  (m[4]*m[8] - m[7]*m[5]);
+  inv[1] = -(m[1]*m[8] - m[7]*m[2]);
+  inv[2] =  (m[1]*m[5] - m[4]*m[2]);
+
+  inv[3] = -(m[3]*m[8] - m[6]*m[5]);
+  inv[4] =  (m[0]*m[8] - m[6]*m[2]);
+  inv[5] = -(m[0]*m[5] - m[3]*m[2]);
+
+  inv[6] =  (m[3]*m[7] - m[6]*m[4]);
+  inv[7] = -(m[0]*m[7] - m[6]*m[1]);
+  inv[8] =  (m[0]*m[4] - m[3]*m[1]);
+
+  float det = m[0]*inv[0] + m[1]*inv[3] + m[2]*inv[6];
+  if (det == 0.0)
+    return 1;
+
+  det = 1.0/det;
+  for (int i = 0; i < 9; i++)
+    out[i] = inv[i] * det;
+  return 0;
+}
+
+void mat3_from_mat4(float *restrict mat3, const float *restrict mat4)
+{
+  mat3[0] = mat4[0];
+  mat3[1] = mat4[1];
+  mat3[2] = mat4[2];
+
+  mat3[3] = mat4[4];
+  mat3[4] = mat4[5];
+  mat3[5] = mat4[6];
+
+  mat3[6] = mat4[8];
+  mat3[7] = mat4[9];
+  mat3[8] = mat4[10];
 }
 
 void mat3_mul_vec3(float *restrict ret, const float *m, const float *restrict v)
@@ -446,4 +690,18 @@ void vec3_normalize(float *v)
   v[0] *= s;
   v[1] *= s;
   v[2] *= s;
+}
+
+void vec3_scale(float *v, float scale)
+{
+  v[0] *= scale;
+  v[1] *= scale;
+  v[2] *= scale;
+}
+
+void vec3_add_to(float *restrict a, const float *restrict b)
+{
+  a[0] += b[0];
+  a[1] += b[1];
+  a[2] += b[2];
 }

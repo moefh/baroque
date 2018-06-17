@@ -478,11 +478,17 @@ static int read_nodes_element(struct GLTF_READER *reader, int index, void *data)
   
   if (! info.has_matrix) {
     if (info.has_rotation)
-      debug_log("TODO: apply rotation to node matrix\n");
-    if (info.has_scale)
-      debug_log("TODO: apply scale to node matrix\n");
-    if (info.has_translation)
-      debug_log("TODO: apply translation to node matrix\n");
+      printf("TODO: apply rotation to node matrix\n");
+    if (info.has_translation) {
+      float translation[16];
+      mat4_load_translation(translation, info.translation[0], info.translation[1], info.translation[2]);
+      mat4_mul_right(node->matrix, translation);
+    }
+    if (info.has_scale) {
+      float scale[16];
+      mat4_load_scale(scale, info.scale[0], info.scale[1], info.scale[2]);
+      mat4_mul_right(node->matrix, scale);
+    }
   }
   return 0;
 }

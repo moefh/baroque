@@ -11,7 +11,7 @@
 #include "gltf.h"
 #include "matrix.h"
 
-#define DEBUG_MODEL_READER
+//#define DEBUG_MODEL_READER
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
 #else
@@ -49,7 +49,7 @@ static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, u
 {
   // check if texture is already converted
   if (reader->converted_textures[gltf_texture] != MODEL_TEXTURE_NONE) {
-    printf("  -> texture %d was already converted as model texture %d\n", gltf_texture, reader->converted_textures[gltf_texture]);
+    debug_log("  -> texture %d was already converted as model texture %d\n", gltf_texture, reader->converted_textures[gltf_texture]);
     *p_model_texture_index = reader->converted_textures[gltf_texture];
     return 0;
   }
@@ -266,7 +266,7 @@ static int extract_ind_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER 
   return 0;
 }
 
-static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_MESH_PRIMITIVE *prim)
+static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_NODE *node, struct GLTF_MESH_PRIMITIVE *prim)
 {
   if (reader->model->n_meshes >= MODEL_MAX_MESHES) {
     debug_log("* WARNING: ignoring primitive: too many meshes converted\n");
@@ -304,20 +304,21 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
 
   debug_log("-> adding mesh with vtx_size=%u, ind_size=%u\n", vtx_buffer_size, ind_buffer_size);
   struct MODEL_MESH *model_mesh = new_model_mesh(mesh_vtx_type, vtx_buffer_size, mesh_ind_type, ind_buffer_size, indices_accessor->count);
-  
+  mat4_copy(model_mesh->matrix, node->matrix);
+
+  // extract mesh data
   if (extract_vtx_buffer_data(model_mesh, reader, prim, used_vtx_attribs) != 0)
     return 1;
   if (extract_ind_buffer_data(model_mesh, reader, indices_accessor) != 0)
     return 1;
   
-  reader->model->meshes[reader->model->n_meshes++] = model_mesh;
-
   // convert material
   if (prim->material != GLTF_NONE) {
     if (convert_gltf_material(reader, model_mesh, &reader->gltf->materials[prim->material]) != 0)
       return 1;
   }
   
+  reader->model->meshes[reader->model->n_meshes++] = model_mesh;
   return 0;
 }
 
@@ -327,7 +328,7 @@ static int convert_gltf_node(struct MODEL_READER *reader, struct GLTF_NODE *node
     return 0;
   struct GLTF_MESH *mesh = &reader->gltf->meshes[node->mesh];
   for (uint16_t i = 0; i < mesh->n_primitives; i++) {
-    if (convert_gltf_mesh_primitive(reader, &mesh->primitives[i]) != 0)
+    if (convert_gltf_mesh_primitive(reader, node, &mesh->primitives[i]) != 0)
       return 1;
   }
   

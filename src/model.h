@@ -29,6 +29,7 @@ struct MODEL_MESH {
   uint16_t tex1_index;
   uint8_t  vtx_type;
   uint8_t  ind_type;
+  float matrix[16];
   
   void *vtx;
   void *ind;
