@@ -10,6 +10,7 @@
 #include "gl_error.h"
 #include "gamepad.h"
 #include "render.h"
+#include "model.h"
 
 #define WINDOW_WIDTH   800
 #define WINDOW_HEIGHT  600

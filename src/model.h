@@ -11,9 +11,9 @@
 #define MODEL_MAX_MESHES   16
 
 #define MODEL_MESH_VTX_POS             0
-#define MODEL_MESH_VTX_POS_UV1         2
-#define MODEL_MESH_VTX_POS_UV2         3
-#define MODEL_MESH_VTX_POS_NORMAL      1
+#define MODEL_MESH_VTX_POS_UV1         1
+#define MODEL_MESH_VTX_POS_UV2         2
+#define MODEL_MESH_VTX_POS_NORMAL      3
 #define MODEL_MESH_VTX_POS_NORMAL_UV1  4
 #define MODEL_MESH_VTX_POS_NORMAL_UV2  5
 
