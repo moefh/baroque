@@ -222,7 +222,7 @@ void mat4_scale(float *m, float scale)
   m[14] *= scale;
 }
 
-void mat4_rot_x(float *m, float angle)
+void mat4_load_rot_x(float *m, float angle)
 {
   float c = cos(angle);
   float s = sin(angle);
@@ -248,7 +248,7 @@ void mat4_rot_x(float *m, float angle)
   m[15] = 1.0;
 }
 
-void mat4_rot_y(float *m, float angle)
+void mat4_load_rot_y(float *m, float angle)
 {
   float c = cos(angle);
   float s = sin(angle);
@@ -274,7 +274,7 @@ void mat4_rot_y(float *m, float angle)
   m[15] = 1.0;
 }
 
-void mat4_rot_z(float *m, float angle)
+void mat4_load_rot_z(float *m, float angle)
 {
   float c = cos(angle);
   float s = sin(angle);
@@ -570,14 +570,6 @@ void mat4_mul_vec3(float *restrict ret, const float *m, const float *restrict v)
   ret[2] = m[ 8]*v[2] + m[ 9]*v[2] + m[10]*v[2];
 }
 
-void vec4_load(float *v, float x, float y, float z, float w)
-{
-  v[0] = x;
-  v[1] = y;
-  v[2] = z;
-  v[3] = w;
-}
-
 void mat3_copy(float *restrict dest, const float *restrict src)
 {
   memcpy(dest, src, 9*sizeof(float));
@@ -646,13 +638,6 @@ void mat3_mul_vec3(float *restrict ret, const float *m, const float *restrict v)
   ret[2] = m[6]*v[2] + m[7]*v[2] + m[8]*v[2];
 }
 
-void vec3_load(float *v, float x, float y, float z)
-{
-  v[0] = x;
-  v[1] = y;
-  v[2] = z;
-}
-
 void vec3_load_spherical(float *v, float r, float theta, float phi)
 {
   float st = sin(theta);
@@ -667,41 +652,9 @@ void vec3_load_spherical(float *v, float r, float theta, float phi)
   v[2] = r * cp * st;
 }
 
-void vec3_copy(float *restrict dest, const float *restrict src)
-{
-  memcpy(dest, src, 3*sizeof(float));
-}
-
-float vec3_dot(const float *a, const float *b)
-{
-  return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-}
-
 void vec3_cross(float *restrict ret, const float *restrict a, const float *restrict b)
 {
   ret[0] = a[1]*b[2] - a[2]*b[1];
   ret[1] = a[2]*b[0] - a[0]*b[2];
   ret[2] = a[0]*b[1] - a[1]*b[0];
-}
-
-void vec3_normalize(float *v)
-{
-  float s = 1.0/sqrt(vec3_dot(v, v));
-  v[0] *= s;
-  v[1] *= s;
-  v[2] *= s;
-}
-
-void vec3_scale(float *v, float scale)
-{
-  v[0] *= scale;
-  v[1] *= scale;
-  v[2] *= scale;
-}
-
-void vec3_add_to(float *restrict a, const float *restrict b)
-{
-  a[0] += b[0];
-  a[1] += b[1];
-  a[2] += b[2];
 }

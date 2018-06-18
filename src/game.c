@@ -8,9 +8,14 @@
 #include "camera.h"
 #include "matrix.h"
 
+struct GAMEPAD gamepad;
 struct CAMERA camera;
 struct FPS_COUNTER fps_counter;
+struct CREATURE creatures[MAX_CREATURES];
 
+#define MOVE_SPEED (1.0 / 20.0)
+
+// these should be configurable:
 #define PAD_BTN_A      0
 #define PAD_BTN_B      1
 #define PAD_BTN_X      2
@@ -19,7 +24,6 @@ struct FPS_COUNTER fps_counter;
 #define PAD_BTN_RB     5
 #define PAD_BTN_SELECT 6
 #define PAD_BTN_START  7
-
 #define PAD_BTN_UP     10
 #define PAD_BTN_RIGHT  11
 #define PAD_BTN_DOWN   12
@@ -35,73 +39,50 @@ struct FPS_COUNTER fps_counter;
 #define CAM_SENSITIVITY_X (1.0 / 40.0)
 #define CAM_SENSITIVITY_Y (1.0 / 40.0)
 
-#define MOVE_SPEED (1.0 / 20.0)
-
-static float clamp(float val, float min, float max)
+static void handle_input(void)
 {
-  if (val < min)
-    return min;
-  if (val > max)
-    return max;
-  return val;
-}
-
-#if 0
-static void dump_gamepad(struct GAMEPAD *pad)
-{
-  int buttons_pressed = 0;
-  for (int b = 0; b < pad->n_buttons; b++) {
-    if (pad->btn_pressed[b]) {
-      console("button %d pressed\n", b);
-      buttons_pressed = 1;
-    }
-  }
-  if (buttons_pressed) {
-    for (int i = 0; i < pad->n_axes; i++)
-      console("axis %d: %+f\n", i, pad->axis[i]);
-  }
-}
-#endif
-
-void handle_input(struct GAMEPAD *pad)
-{
-  if (update_gamepad(pad) < 0)
+  if (update_gamepad(&gamepad) < 0)
     return;
-
-  //dump_gamepad(pad);
+  //dump_gamepad_state(&gamepad);
   
-  if (pad->btn_pressed[PAD_BTN_A])
+  if (gamepad.btn_pressed[PAD_BTN_A])
     console("%4.1f fps\n", fps_counter.fps);
 
-  float cam_x = pad->axis[PAD_AXIS_CAM_X];
-  float cam_y = pad->axis[PAD_AXIS_CAM_Y];
+  float cam_x = gamepad.axis[PAD_AXIS_CAM_X];
+  float cam_y = gamepad.axis[PAD_AXIS_CAM_Y];
   if (fabsf(cam_x) > GAMEPAD_DEAD_ZONE)
     camera.theta += cam_x * CAM_SENSITIVITY_X;
   if (fabsf(cam_y) > GAMEPAD_DEAD_ZONE)
     camera.phi -= cam_y * CAM_SENSITIVITY_Y;
   camera.phi = clamp(camera.phi, 0.2, M_PI/2 - 0.2);
 
-  float move_x = pad->axis[PAD_AXIS_MOVE_X];
-  float move_y = pad->axis[PAD_AXIS_MOVE_Y];
-  if (fabsf(move_x) > GAMEPAD_DEAD_ZONE || fabsf(move_y) > GAMEPAD_DEAD_ZONE) {
+  float move_x = gamepad.axis[PAD_AXIS_MOVE_X];
+  if (fabs(move_x) < GAMEPAD_DEAD_ZONE)
+    move_x = 0.0;
+  float move_y = gamepad.axis[PAD_AXIS_MOVE_Y];
+  if (fabs(move_y) < GAMEPAD_DEAD_ZONE)
+    move_y = 0.0;
+  if (move_x != 0.0 || move_y != 0.0) {
     float front[3], left[3];
-
     get_camera_vectors(&camera, front, left);
     front[1] = 0;
-    vec3_normalize(front);
     left[1] = 0;
+    vec3_normalize(front);
     vec3_normalize(left);
-    
-    if (fabsf(move_x) > GAMEPAD_DEAD_ZONE) {
-      vec3_scale(left, -move_x * MOVE_SPEED);
-      vec3_add_to(camera.center, left);
-    }
-    if (fabsf(move_y) > GAMEPAD_DEAD_ZONE) {
-      vec3_scale(front, move_y * MOVE_SPEED);
-      vec3_add_to(camera.center, front);
-    }
-  }
+    vec3_scale(left, -move_x);
+    vec3_scale(front, move_y);
 
-  
-  //console("cam: %+f,%+f\n", pad->axis[PAD_AXIS_CAM_X], pad->axis[PAD_AXIS_CAM_Y]);
+    float move[3];
+    vec3_add(move, front, left);
+    vec3_scale(move, MOVE_SPEED);
+    vec3_add_to(creatures[0].pos, move);
+    creatures[0].theta = atan2(move[2], move[0]) - M_PI/2;
+  }
+}
+
+void process_game_step(void)
+{
+  handle_input();
+
+  vec3_copy(camera.center, creatures[0].pos);
 }

@@ -18,7 +18,6 @@
 
 static GLFWwindow *window;
 static int gfx_initialized;
-static struct GAMEPAD pad;
 
 static void error_callback(int error, const char *description)
 {
@@ -33,13 +32,13 @@ static void reset_viewport_callback(GLFWwindow *window, int width, int height)
 static void joystick_callback(int joy, int event)
 {
   if (event == GLFW_CONNECTED) {
-    if (pad.id < 0)
-      init_gamepad(&pad, joy);
+    if (gamepad.id < 0)
+      init_gamepad(&gamepad, joy);
     debug("- Joystick %d connected\n", joy);
-  } else if (event == GLFW_DISCONNECTED && joy == pad.id) {
-    init_gamepad(&pad, -1);
+  } else if (event == GLFW_DISCONNECTED && joy == gamepad.id) {
+    init_gamepad(&gamepad, -1);
     debug("- Joystick %d disconnected\n", joy);
-    detect_gamepad(&pad);
+    detect_gamepad(&gamepad);
   }
 }
 
@@ -124,7 +123,7 @@ int main(void)
   if (init_gfx() != 0)
     goto err;
 
-  detect_gamepad(&pad);
+  detect_gamepad(&gamepad);
 
   int width, height;
   glfwGetWindowSize(window, &width, &height);
@@ -137,7 +136,7 @@ int main(void)
     if (glfwWindowShouldClose(window))
       break;
     
-    handle_input(&pad);
+    process_game_step();
     render_screen();
     update_fps_counter();
     glfwSwapBuffers(window);

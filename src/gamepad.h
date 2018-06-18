@@ -23,5 +23,6 @@ struct GAMEPAD {
 void init_gamepad(struct GAMEPAD *pad, int id);
 int detect_gamepad(struct GAMEPAD *pad);
 int update_gamepad(struct GAMEPAD *pad);
+void dump_gamepad_state(struct GAMEPAD *pad);
 
 #endif /* GAMEPAD_H_FILE */

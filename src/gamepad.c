@@ -60,4 +60,13 @@ int update_gamepad(struct GAMEPAD *pad)
   return 0;
 }
 
+void dump_gamepad_state(struct GAMEPAD *pad)
+{
+  for (int b = 0; b < pad->n_buttons; b++) {
+    if (pad->btn_pressed[b])
+      console("button %d pressed\n", b);
+  }
+  for (int i = 0; i < pad->n_axes; i++)
+    console("axis %d: %+f\n", i, pad->axis[i]);
+}
 

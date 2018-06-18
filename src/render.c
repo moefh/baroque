@@ -12,38 +12,47 @@
 #include "camera.h"
 #include "game.h"
 
+#define GFX_MESH_TYPE_CREATURE 0
+#define GFX_MESH_TYPE_WORLD    1
+
 struct GFX_MESH {
   GLuint vtx_array_obj;
   GLuint vtx_buf_obj;
   GLuint index_buf_obj;
+  GLuint texture_id;
   
   uint32_t index_count;
   uint32_t index_type;
   float matrix[16];
-  GLuint texture_id;
+  uint32_t type;
+  uint32_t info;
 };
 
 struct GFX_TEXTURE {
   GLuint id;
 
-  int uploaded;
+  int used;
 };
 
 struct GFX_SHADER {
   GLuint id;
   GLint uni_tex1;
+  GLint uni_light_pos;
   GLint uni_mat_model_view_projection;
   GLint uni_mat_normal;
+  GLint uni_mat_model;
 };
 
+#define MAX_MESHES 16
+#define MAX_TEXTURES 16
 
 static int n_meshes;
-static struct GFX_MESH meshes[16];
-static struct GFX_TEXTURE textures[16];
+static struct GFX_MESH meshes[MAX_MESHES];
+static struct GFX_TEXTURE textures[MAX_TEXTURES];
 static struct GFX_SHADER shader;
 
+static float light_pos_delta[3] = { 0.0, 10.0, 5.0 };
 static float mat_projection[16];
-
 
 static int load_shader(void)
 {
@@ -52,7 +61,9 @@ static int load_shader(void)
     return 1;
 
   get_shader_uniform_id(shader.id, &shader.uni_tex1, "tex1");
+  get_shader_uniform_id(shader.id, &shader.uni_light_pos, "light_pos");
   get_shader_uniform_id(shader.id, &shader.uni_mat_model_view_projection, "mat_model_view_projection");
+  get_shader_uniform_id(shader.id, &shader.uni_mat_model, "mat_model");
   get_shader_uniform_id(shader.id, &shader.uni_mat_normal, "mat_normal");
   return 0;
 }
@@ -151,7 +162,7 @@ static int upload_model_texture(struct MODEL_TEXTURE *texture, struct GFX_TEXTUR
 {
   GL_CHECK(glGenTextures(1, &gfx->id));
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, gfx->id));
-  gfx->uploaded = 1;
+  gfx->used = 1;
 
   GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
   GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
@@ -169,31 +180,67 @@ static int upload_model_texture(struct MODEL_TEXTURE *texture, struct GFX_TEXTUR
   return 0;
 }
 
-static int load_model(void)
+static int upload_model(struct MODEL *model, uint32_t type, uint32_t info)
 {
-  const char *filename = "data/rooms0-2.glb";
-  //const char *filename = "data/tex_plane.glb";
-  //const char *filename = "data/square.glb";
+  if (n_meshes + model->n_meshes >= MAX_MESHES)
+    return -1;
+  
+  int first_mesh = n_meshes;
+  int first_free_gfx_texture = -1;
+  for (int i = 0; i < MAX_TEXTURES; i++) {
+    if (! textures[i].used) {
+      first_free_gfx_texture = i;
+      break;
+    }
+  }
+  if (first_free_gfx_texture < 0)
+    return -1;
+  
+  for (int i = 0; i < model->n_meshes; i++) {
+    upload_model_mesh(model->meshes[i], &meshes[n_meshes]);
+    int model_tex_index = model->meshes[i]->tex0_index;
+    int gfx_tex_index = first_free_gfx_texture + model->meshes[i]->tex0_index;
+    if (! textures[gfx_tex_index].used)
+      upload_model_texture(&model->textures[model_tex_index], &textures[gfx_tex_index]);
+    meshes[n_meshes].texture_id = textures[gfx_tex_index].id;
+    meshes[n_meshes].type = type;
+    meshes[n_meshes].info = info;
+    
+    n_meshes++;
+  }
+
+  return first_mesh;
+}
+
+static int load_models(void)
+{
+  struct {
+    uint32_t type;
+    uint32_t info;
+    char *filename;
+  } model_info[] = {
+    { GFX_MESH_TYPE_WORLD,    0, "data/rooms0-2.glb" },
+    { GFX_MESH_TYPE_CREATURE, 0, "data/ball.glb" },
+    { 0, 0, NULL }
+  };
+
+  n_meshes = 0;
+  for (int i = 0; i < MAX_TEXTURES; i++)
+    textures[i].used = 0;
 
   struct MODEL model;
-  if (read_glb_model(&model, filename) != 0) {
-    console("ERROR reading model GLB file\n");
-    return 1;
+  for (int i = 0; model_info[i].filename != NULL; i++) {
+    if (read_glb_model(&model, model_info[i].filename) != 0) {
+      console("ERROR reading file '%s'\n", model_info[i].filename);
+      return 1;
+    }
+    if (upload_model(&model, model_info[i].type, model_info[i].info) < 0) {
+      console("ERROR uploading model '%s'\n", model_info[i].filename);
+      return 1;
+    }
+    free_model(&model);
   }
 
-  for (int i = 0; i < (int) (sizeof(textures)/sizeof(textures[0])); i++)
-    textures[i].uploaded = 0;
-  
-  n_meshes = model.n_meshes;
-  for (int i = 0; i < n_meshes; i++) {
-    upload_model_mesh(model.meshes[i], &meshes[i]);
-    int tex_index = model.meshes[i]->tex0_index;
-
-    if (! textures[tex_index].uploaded)
-      upload_model_texture(&model.textures[tex_index], &textures[tex_index]);
-    meshes[i].texture_id = textures[tex_index].id;
-  }
-  free_model(&model);
   return 0;
 }
 
@@ -209,18 +256,19 @@ int render_setup(float aspect)
   if (load_shader() != 0)
     return 1;
 
-  if (load_model() != 0)
+  if (load_models() != 0)
     return 1;
 
   setup_projection(aspect);
   init_camera(&camera);
+  camera.distance = 7;
   
   glClearColor(0.0, 0.0, 0.4, 1.0);
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  //glEnable(GL_CULL_FACE);
-  //glFrontFace(GL_CCW);
+  glEnable(GL_CULL_FACE);
+  glFrontFace(GL_CCW);
   
   return 0;
 }
@@ -231,26 +279,51 @@ void render_set_viewport(int width, int height)
   setup_projection((float) width / height);
 }
 
+static void get_creature_model_matrix(float *restrict mat_model, float *restrict mesh_matrix, struct CREATURE *creature)
+{
+  float rot[16];
+  mat4_load_rot_y(rot, creature->theta);
+  mat4_mul(mat_model, mesh_matrix, rot);
+  
+  mat_model[ 3] += creature->pos[0];
+  mat_model[ 7] += creature->pos[1];
+  mat_model[11] += creature->pos[2];
+}
+
 static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view)
 {
-  GL_CHECK(glActiveTexture(GL_TEXTURE0));
-  GL_CHECK(glBindTexture(GL_TEXTURE_2D, mesh->texture_id));
+  float mat_model[16];
+  switch (mesh->type) {
+  case GFX_MESH_TYPE_WORLD:
+    mat4_copy(mat_model, mesh->matrix);
+    break;
 
-  // model_view_projection
-  float mat_model_view_projection[16];
-  mat4_mul(mat_model_view_projection, mat_view_projection, mesh->matrix);
+  case GFX_MESH_TYPE_CREATURE:
+    get_creature_model_matrix(mat_model, mesh->matrix, &creatures[mesh->info]);
+    break;
 
-  // normal
-  float mat_model_view[16], mat_inv[16], mat_normal[16];
-  mat4_mul(mat_model_view, mat_view, mesh->matrix);
-  mat4_inverse(mat_inv, mat_model_view);
-  mat4_transpose(mat_normal, mat_inv);
+  default:
+    mat4_copy(mat_model, mesh->matrix);
+    break;
+  }
   
+  float mat_model_view_projection[16];
+  mat4_mul(mat_model_view_projection, mat_view_projection, mat_model);
+
+  // mat_normal = transpose(inverse(mat_model))
+  float mat_inv[16], mat_normal[16];
+  mat4_inverse(mat_inv, mat_model);
+  mat4_transpose(mat_normal, mat_inv);
+
   if (shader.uni_mat_model_view_projection >= 0)
     GL_CHECK(glUniformMatrix4fv(shader.uni_mat_model_view_projection, 1, GL_TRUE, mat_model_view_projection));
   if (shader.uni_mat_normal >= 0)
     GL_CHECK(glUniformMatrix4fv(shader.uni_mat_normal, 1, GL_TRUE, mat_normal));
+  if (shader.uni_mat_model >= 0)
+    GL_CHECK(glUniformMatrix4fv(shader.uni_mat_model, 1, GL_TRUE, mat_model));
   
+  GL_CHECK(glActiveTexture(GL_TEXTURE0));
+  GL_CHECK(glBindTexture(GL_TEXTURE_2D, mesh->texture_id));
   GL_CHECK(glBindVertexArray(mesh->vtx_array_obj));
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
 }
@@ -259,8 +332,13 @@ void render_screen(void)
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+  float light_pos[3];
+  vec3_copy(light_pos, camera.center);
+  vec3_add_to(light_pos, light_pos_delta);
+    
   GL_CHECK(glUseProgram(shader.id));
   GL_CHECK(glUniform1i(shader.uni_tex1, 0));
+  GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
 
   float mat_view[16];
   get_camera_matrix(&camera, mat_view);
