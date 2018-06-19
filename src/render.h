@@ -3,7 +3,7 @@
 #ifndef RENDER_H_FILE
 #define RENDER_H_FILE
 
-int render_setup(float aspect);
+int render_setup(int width, int height);
 void render_set_viewport(int width, int height);
 void render_screen(void);
 

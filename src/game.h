@@ -25,5 +25,7 @@ extern struct GAMEPAD gamepad;
 extern struct CAMERA camera;
 extern struct FPS_COUNTER fps_counter;
 extern struct CREATURE creatures[MAX_CREATURES];
+extern float projection_fov;
+extern float projection_aspect;
 
 #endif /* GAME_H_FILE */

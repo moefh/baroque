@@ -13,5 +13,6 @@ struct CAMERA {
 void init_camera(struct CAMERA *cam);
 void get_camera_matrix(struct CAMERA *cam, float *matrix);
 void get_camera_vectors(struct CAMERA *cam, float *front, float *left);
+void get_camera_pos(struct CAMERA *cam, float *pos);
 
 #endif /* CAMERA_H_FILE */

@@ -71,6 +71,7 @@ static int init_gfx()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   //glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
   
+  glfwWindowHint(GLFW_MAXIMIZED, 1);
   window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_NAME, NULL, NULL);
   if (! window) {
     glfwTerminate();
@@ -81,6 +82,7 @@ static int init_gfx()
   glfwSetFramebufferSizeCallback(window, reset_viewport_callback);
   glfwSetJoystickCallback(joystick_callback);
   glfwSetKeyCallback(window, key_callback);
+  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
   glfwSwapInterval(1);
 
   debug("- Initializing OpenGL extensions...\n");
@@ -127,7 +129,7 @@ int main(void)
 
   int width, height;
   glfwGetWindowSize(window, &width, &height);
-  if (render_setup((float) width / height) != 0)
+  if (render_setup(width, height) != 0)
     goto err;
   
   debug("- Running main loop...\n");

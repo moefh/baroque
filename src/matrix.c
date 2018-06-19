@@ -33,7 +33,7 @@ void vec4_dump(const float *v)
 
 void vec3_dump(const float *v)
 {
-  for (int i = 0; i < 4; i++)
+  for (int i = 0; i < 3; i++)
     printf("  %8.5f", v[i]);
   printf("\n");
 }

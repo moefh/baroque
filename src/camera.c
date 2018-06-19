@@ -44,3 +44,9 @@ void get_camera_vectors(struct CAMERA *cam, float *front, float *left)
   vec3_cross(left, up, front);
   vec3_normalize(left);
 }
+
+void get_camera_pos(struct CAMERA *cam, float *pos)
+{
+  vec3_load_spherical(pos, cam->distance, cam->theta, cam->phi);
+  vec3_add_to(pos, cam->center);
+}

@@ -12,6 +12,8 @@
 #include "camera.h"
 #include "game.h"
 
+#define PROJECTION_FOV  (M_PI*75/180)
+
 #define GFX_MESH_TYPE_CREATURE 0
 #define GFX_MESH_TYPE_WORLD    1
 
@@ -38,6 +40,7 @@ struct GFX_SHADER {
   GLuint id;
   GLint uni_tex1;
   GLint uni_light_pos;
+  GLint uni_camera_pos;
   GLint uni_mat_model_view_projection;
   GLint uni_mat_normal;
   GLint uni_mat_model;
@@ -51,9 +54,6 @@ static struct GFX_MESH meshes[MAX_MESHES];
 static struct GFX_TEXTURE textures[MAX_TEXTURES];
 static struct GFX_SHADER shader;
 
-static float light_pos_delta[3] = { 0.0, 10.0, 5.0 };
-static float mat_projection[16];
-
 static int load_shader(void)
 {
   shader.id = load_program_shader("data/vert.glsl", "data/frag.glsl");
@@ -62,6 +62,7 @@ static int load_shader(void)
 
   get_shader_uniform_id(shader.id, &shader.uni_tex1, "tex1");
   get_shader_uniform_id(shader.id, &shader.uni_light_pos, "light_pos");
+  get_shader_uniform_id(shader.id, &shader.uni_camera_pos, "camera_pos");
   get_shader_uniform_id(shader.id, &shader.uni_mat_model_view_projection, "mat_model_view_projection");
   get_shader_uniform_id(shader.id, &shader.uni_mat_model, "mat_model");
   get_shader_uniform_id(shader.id, &shader.uni_mat_normal, "mat_normal");
@@ -167,7 +168,7 @@ static int upload_model_texture(struct MODEL_TEXTURE *texture, struct GFX_TEXTUR
   GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
   GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
 
-  GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+  GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
   GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
 
   if (texture->n_chan == 3)
@@ -219,8 +220,8 @@ static int load_models(void)
     uint32_t info;
     char *filename;
   } model_info[] = {
-    { GFX_MESH_TYPE_WORLD,    0, "data/rooms0-2.glb" },
-    { GFX_MESH_TYPE_CREATURE, 0, "data/ball.glb" },
+    { GFX_MESH_TYPE_WORLD,    0, "data/world.glb" },
+    { GFX_MESH_TYPE_CREATURE, 0, "data/player.glb" },
     { 0, 0, NULL }
   };
 
@@ -244,14 +245,7 @@ static int load_models(void)
   return 0;
 }
 
-static void setup_projection(float aspect)
-{
-  //mat4_frustum(mat_projection, -1.0,1.0,  -1.0,1.0,  1.0,1200.0);
-  //mat4_perspective(mat_projection, aspect, M_PI/3, 1.0, 1200.0);
-  mat4_inf_perspective(mat_projection, aspect, M_PI/3, 1.0);
-}
-
-int render_setup(float aspect)
+int render_setup(int width, int height)
 {
   if (load_shader() != 0)
     return 1;
@@ -259,9 +253,10 @@ int render_setup(float aspect)
   if (load_models() != 0)
     return 1;
 
-  setup_projection(aspect);
   init_camera(&camera);
-  camera.distance = 7;
+  camera.distance = 4.0;
+
+  render_set_viewport(width, height);
   
   glClearColor(0.0, 0.0, 0.4, 1.0);
   glEnable(GL_DEPTH_TEST);
@@ -276,7 +271,7 @@ int render_setup(float aspect)
 void render_set_viewport(int width, int height)
 {
   glViewport(0, 0, width, height);
-  setup_projection((float) width / height);
+  projection_aspect = (float) width / height;
 }
 
 static void get_creature_model_matrix(float *restrict mat_model, float *restrict mesh_matrix, struct CREATURE *creature)
@@ -310,7 +305,6 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   float mat_model_view_projection[16];
   mat4_mul(mat_model_view_projection, mat_view_projection, mat_model);
 
-  // mat_normal = transpose(inverse(mat_model))
   float mat_inv[16], mat_normal[16];
   mat4_inverse(mat_inv, mat_model);
   mat4_transpose(mat_normal, mat_inv);
@@ -328,17 +322,37 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
 }
 
+static void get_light_pos(float *restrict light_pos, float *restrict camera_pos)
+{
+  float camera_dir[3] = {
+    camera_pos[0] - camera.center[0],
+    camera_pos[1] - camera.center[1],
+    camera_pos[2] - camera.center[2],
+  };
+  vec3_normalize(camera_dir);
+  vec3_scale(camera_dir, 4.0);
+  light_pos[0] = camera_pos[0] + camera_dir[0];
+  light_pos[1] = camera_pos[1] + 4.0;
+  light_pos[2] = camera_pos[2] + camera_dir[2];
+}
+
 void render_screen(void)
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+  float camera_pos[3];
+  get_camera_pos(&camera, camera_pos);
+
   float light_pos[3];
-  vec3_copy(light_pos, camera.center);
-  vec3_add_to(light_pos, light_pos_delta);
-    
+  get_light_pos(light_pos, camera_pos);
+  
   GL_CHECK(glUseProgram(shader.id));
   GL_CHECK(glUniform1i(shader.uni_tex1, 0));
   GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
+  GL_CHECK(glUniform3fv(shader.uni_camera_pos, 1, camera_pos));
+
+  float mat_projection[16];
+  mat4_inf_perspective(mat_projection, projection_aspect, projection_fov, 0.1);
 
   float mat_view[16];
   get_camera_matrix(&camera, mat_view);
