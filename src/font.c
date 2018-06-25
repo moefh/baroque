@@ -22,8 +22,8 @@ static struct MODEL_MESH *create_font_mesh(int max_chars_per_draw, int tex_w, in
 
   float u1 = 1.0 / (2*tex_w);
   float v1 = 1.0 / (2*tex_h);
-  float u2 = u1 + 1.0 / 16.0;
-  float v2 = v1 + 1.0 / 8.0;
+  float u2 = u1 + 1.0 / tex_w * (tex_w / 16 - 1);
+  float v2 = v1 + 1.0 / tex_h * (tex_h / 8 - 1);
 
   float vtx_info[4][6] = {
     // x  y  z    u   v
