@@ -41,6 +41,23 @@ struct CREATURE creatures[MAX_CREATURES];
 #define CAM_SENSITIVITY_X (1.0 / 40.0)
 #define CAM_SENSITIVITY_Y (1.0 / 40.0)
 
+void get_light_pos(float *restrict light_pos)
+{
+  float camera_pos[3];
+  get_camera_pos(&camera, camera_pos);
+
+  float camera_dir[3] = {
+    camera_pos[0] - camera.center[0],
+    camera_pos[1] - camera.center[1],
+    camera_pos[2] - camera.center[2],
+  };
+  vec3_normalize(camera_dir);
+  vec3_scale(camera_dir, 4.0);
+  light_pos[0] = camera_pos[0] + camera_dir[0];
+  light_pos[1] = camera_pos[1] + 4.0;
+  light_pos[2] = camera_pos[2] + camera_dir[2];
+}
+
 static float apply_dead_zone(float val)
 {
   if (fabs(val) < GAMEPAD_DEAD_ZONE)

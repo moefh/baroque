@@ -423,20 +423,6 @@ static void render_text(float x, float y, const char *text)
   }
 }
 
-static void get_light_pos(float *restrict light_pos, float *restrict camera_pos)
-{
-  float camera_dir[3] = {
-    camera_pos[0] - camera.center[0],
-    camera_pos[1] - camera.center[1],
-    camera_pos[2] - camera.center[2],
-  };
-  vec3_normalize(camera_dir);
-  vec3_scale(camera_dir, 4.0);
-  light_pos[0] = camera_pos[0] + camera_dir[0];
-  light_pos[1] = camera_pos[1] + 4.0;
-  light_pos[2] = camera_pos[2] + camera_dir[2];
-}
-
 void render_screen(void)
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -446,7 +432,7 @@ void render_screen(void)
   get_camera_pos(&camera, camera_pos);
 
   float light_pos[3];
-  get_light_pos(light_pos, camera_pos);
+  get_light_pos(light_pos);
   
   glEnable(GL_DEPTH_TEST);
   GL_CHECK(glUseProgram(shader.id));

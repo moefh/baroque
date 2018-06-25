@@ -19,6 +19,7 @@ struct CREATURE {
   float theta;
 };
 
+void get_light_pos(float *light_pos);
 void process_game_step(void);
 
 extern struct GAMEPAD gamepad;
