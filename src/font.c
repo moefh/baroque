@@ -8,12 +8,12 @@
 #include "font.h"
 #include "debug.h"
 
-static struct MODEL_MESH *create_font_mesh(int max_chars_per_draw, int tex_w, int tex_h)
+static struct MODEL_MESH *create_font_mesh(int tex_w, int tex_h)
 {
-  int n_vtx = 4 * max_chars_per_draw;
+  int n_vtx = 4 * FONT_MAX_CHARS_PER_DRAW;
   size_t vtx_size = n_vtx * (3 + 2) * sizeof(float);
   
-  int n_ind = 6 * max_chars_per_draw;
+  int n_ind = 6 * FONT_MAX_CHARS_PER_DRAW;
   size_t ind_size = n_ind * sizeof(uint16_t);
   
   struct MODEL_MESH *mesh = new_model_mesh(MODEL_MESH_VTX_POS_UV1, vtx_size, MODEL_MESH_IND_U16, ind_size, n_ind);
@@ -35,7 +35,7 @@ static struct MODEL_MESH *create_font_mesh(int max_chars_per_draw, int tex_w, in
   
   float *vtx = mesh->vtx;
   uint16_t *ind = mesh->ind;
-  for (int ch = 0; ch < max_chars_per_draw; ch++) {
+  for (int ch = 0; ch < FONT_MAX_CHARS_PER_DRAW; ch++) {
     for (int i = 0; i < 4; i++) {
       vtx[0] = (vtx_info[i][0] + ch) * 0.5;
       vtx[1] = vtx_info[i][1];
@@ -46,7 +46,7 @@ static struct MODEL_MESH *create_font_mesh(int max_chars_per_draw, int tex_w, in
     }
 
     // clockwise because y will be multiplied by -1
-    ind[0] = 4*ch;
+    ind[0] = 4*ch + 0;
     ind[1] = 4*ch + 2;
     ind[2] = 4*ch + 1;
     ind[3] = 4*ch + 1;
@@ -64,7 +64,7 @@ static void init_font(struct FONT *font)
   font->mesh = NULL;
 }
 
-int read_font(const char *filename, struct FONT *font, int max_chars_per_draw)
+int read_font(struct FONT *font, const char *filename)
 {
   init_font(font);
   
@@ -76,7 +76,7 @@ int read_font(const char *filename, struct FONT *font, int max_chars_per_draw)
   font->texture.height = height;
   font->texture.n_chan = 4;
   
-  font->mesh = create_font_mesh(max_chars_per_draw, width, height);
+  font->mesh = create_font_mesh(width, height);
   if (! font->mesh)
     goto err;
   return 0;

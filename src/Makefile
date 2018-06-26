@@ -5,9 +5,9 @@ OS_CFLAGS = -I$(DEVROOT)/include
 OS_LDFLAGS =
 OS_LIBS = -L$(DEVROOT)/lib -lglfw3 -lgdi32 -lopengl32
 else
-OS_CFLAGS = -fsanitize=address -fsanitize=undefined
-OS_LDFLAGS = -fsanitize=address -fsanitize=undefined
-OS_LIBS = -lglfw -lGL -ldl
+OS_CFLAGS = -g -fsanitize=address -fsanitize=undefined
+OS_LDFLAGS = -g -fsanitize=address -fsanitize=undefined
+OS_LIBS = -L. -lglfw -lGL -ldl
 endif
 
 CC = gcc

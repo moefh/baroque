@@ -1,6 +1,7 @@
 /* render.c */
 
 #include <math.h>
+#include <string.h>
 #include <stdio.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -70,7 +71,6 @@ static struct GFX_TEXTURE font_texture;
 static struct GFX_FONT_SHADER font_shader;
 static float text_scale[2];
 static float text_color[3];
-static int max_text_chars_per_draw;
 
 static int load_shader(void)
 {
@@ -275,10 +275,9 @@ static int load_models(void)
 static int load_font(void)
 {
   const char *font_filename = "data/font.png";
-  max_text_chars_per_draw = 64;
   
   struct FONT font;
-  if (read_font(font_filename, &font, max_text_chars_per_draw) != 0) {
+  if (read_font(&font, font_filename) != 0) {
     console("ERROR loading font file '%s'\n", font_filename);
     return 1;
   }
@@ -324,8 +323,8 @@ void render_set_viewport(int width, int height)
 {
   glViewport(0, 0, width, height);
   projection_aspect = (float) width / height;
-  text_scale[0] = 1.0/32.0;
-  text_scale[1] = text_scale[0] * projection_aspect;
+  text_scale[0] = 1.0 / 32.0;
+  text_scale[1] = -text_scale[0] * projection_aspect;
 }
 
 static void get_creature_model_matrix(float *restrict mat_model, float *restrict mesh_matrix, struct CREATURE *creature)
@@ -378,22 +377,26 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
 
 static void render_text(float x, float y, const char *text)
 {
-  float char_uv[2*64];
+  float char_uv[2*FONT_MAX_CHARS_PER_DRAW];
   float text_pos[2];
 
   const float delta_u = 1.0 / 16.0;
   const float delta_v = 1.0 / 8.0;
 
+  memset(char_uv, 0, sizeof(char_uv));
+
+  GL_CHECK(glActiveTexture(GL_TEXTURE0));
+  GL_CHECK(glBindTexture(GL_TEXTURE_2D, font_mesh.texture_id));
+  
   float pos_x = 2.0 * x;
   float pos_y = y;
   const char *cur_text = text;
   while (*cur_text) {
-    text_pos[0] = 0.5 * pos_x * text_scale[0] - 1.0;
-    text_pos[1] = pos_y * text_scale[1] - 1.0;
+    text_pos[0] = 0.5 * pos_x - 1.0 / text_scale[0];
+    text_pos[1] = pos_y + 1.0 / text_scale[1];
     
-    memset(char_uv, 0, sizeof(char_uv));
     int n_chars = 0;
-    for (int i = 0; i < max_text_chars_per_draw; i++) {
+    for (int i = 0; i < FONT_MAX_CHARS_PER_DRAW; i++) {
       unsigned char ch = *cur_text;
       if (ch == '\0')
         break;
@@ -414,10 +417,8 @@ static void render_text(float x, float y, const char *text)
     GL_CHECK(glUniform2fv(font_shader.uni_text_scale, 1, text_scale));
     GL_CHECK(glUniform2fv(font_shader.uni_text_pos, 1, text_pos));
     GL_CHECK(glUniform3fv(font_shader.uni_text_color, 1, text_color));
-    GL_CHECK(glUniform2fv(font_shader.uni_char_uv, 64, char_uv));
+    GL_CHECK(glUniform2fv(font_shader.uni_char_uv, FONT_MAX_CHARS_PER_DRAW, char_uv));
     
-    GL_CHECK(glActiveTexture(GL_TEXTURE0));
-    GL_CHECK(glBindTexture(GL_TEXTURE_2D, font_mesh.texture_id));
     GL_CHECK(glBindVertexArray(font_mesh.vtx_array_obj));
     GL_CHECK(glDrawElements(GL_TRIANGLES, n_chars * 6, font_mesh.index_type, 0));
   }
@@ -459,5 +460,5 @@ void render_screen(void)
 
   char fps[1024];
   snprintf(fps, sizeof(fps), "%4.1f fps", fps_counter.fps);
-  render_text(0.5, 0.5, fps);
+  render_text(0, 0, fps);
 }
