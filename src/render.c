@@ -74,7 +74,7 @@ static float text_color[3];
 
 static int load_shader(void)
 {
-  shader.id = load_program_shader("data/vert.glsl", "data/frag.glsl");
+  shader.id = load_program_shader("data/model_vert.glsl", "data/model_frag.glsl");
   if (shader.id == 0)
     return 1;
   get_shader_uniform_id(shader.id, &shader.uni_tex1, "tex1");
@@ -259,11 +259,11 @@ static int load_models(void)
   struct MODEL model;
   for (int i = 0; model_info[i].filename != NULL; i++) {
     if (read_glb_model(&model, model_info[i].filename) != 0) {
-      console("ERROR reading file '%s'\n", model_info[i].filename);
+      debug("ERROR reading file '%s'\n", model_info[i].filename);
       return 1;
     }
     if (upload_model(&model, model_info[i].type, model_info[i].info) < 0) {
-      console("ERROR uploading model '%s'\n", model_info[i].filename);
+      debug("ERROR uploading model '%s'\n", model_info[i].filename);
       return 1;
     }
     free_model(&model);
@@ -278,7 +278,7 @@ static int load_font(void)
   
   struct FONT font;
   if (read_font(&font, font_filename) != 0) {
-    console("ERROR loading font file '%s'\n", font_filename);
+    debug("ERROR loading font file '%s'\n", font_filename);
     return 1;
   }
 
@@ -387,6 +387,9 @@ static void render_text(float x, float y, const char *text)
 
   GL_CHECK(glActiveTexture(GL_TEXTURE0));
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, font_mesh.texture_id));
+  GL_CHECK(glUniform2fv(font_shader.uni_text_scale, 1, text_scale));
+  GL_CHECK(glUniform3fv(font_shader.uni_text_color, 1, text_color));
+  GL_CHECK(glBindVertexArray(font_mesh.vtx_array_obj));
   
   float pos_x = 2.0 * x;
   float pos_y = y;
@@ -414,12 +417,9 @@ static void render_text(float x, float y, const char *text)
       pos_x += 1.0;
     }
 
-    GL_CHECK(glUniform2fv(font_shader.uni_text_scale, 1, text_scale));
     GL_CHECK(glUniform2fv(font_shader.uni_text_pos, 1, text_pos));
-    GL_CHECK(glUniform3fv(font_shader.uni_text_color, 1, text_color));
     GL_CHECK(glUniform2fv(font_shader.uni_char_uv, FONT_MAX_CHARS_PER_DRAW, char_uv));
     
-    GL_CHECK(glBindVertexArray(font_mesh.vtx_array_obj));
     GL_CHECK(glDrawElements(GL_TRIANGLES, n_chars * 6, font_mesh.index_type, 0));
   }
 }
