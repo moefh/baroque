@@ -30,7 +30,7 @@ int editor_handle_key(int key, int press, int mods);
 void editor_handle_char(unsigned int codepoint);
 void process_editor_step(void);
 
-#define MAX_EDIT_LINE_LEN 10
+#define MAX_EDIT_LINE_LEN 128
 
 struct EDITOR {
   int active;
