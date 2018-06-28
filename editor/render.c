@@ -11,6 +11,7 @@
 #include "gfx.h"
 #include "font.h"
 #include "camera.h"
+#include "editor.h"
 
 struct GFX_SHADER {
   GLuint id;
@@ -66,6 +67,11 @@ static int load_shader(void)
   return 0;
 }
 
+static void set_text_color(float r, float g, float b)
+{
+  vec3_load(text_color, r, g, b);
+}
+
 static int load_font(void)
 {
   const char *font_filename = "data/font.png";
@@ -77,9 +83,6 @@ static int load_font(void)
   }
 
   font_mesh = upload_font(&font);
-  text_color[0] = 1.0;
-  text_color[1] = 1.0;
-  text_color[2] = 1.0;
   
   free_font(&font);
   return 0;
@@ -106,6 +109,7 @@ int render_setup(int width, int height)
     
   init_camera(&camera);
   render_set_viewport(width, height);
+  set_text_color(1, 1, 1);
 
   glClearColor(0.0, 0.0, 0.4, 1.0);
   glEnable(GL_BLEND);
@@ -242,5 +246,12 @@ void render_screen(void)
   GL_CHECK(glUseProgram(font_shader.id));
   GL_CHECK(glUniform1i(font_shader.uni_tex1, 0));
 
-  render_text(0, 0, "Hello, world!");
+  if (editor.active) {
+    set_text_color(1, 1, 0);
+    render_text(1, 26, ">");
+    set_text_color(1, 1, 1);
+    render_text(2, 26, editor.line);
+    set_text_color(1, 0, 0);
+    render_text(2 + 0.5 * editor.cursor_pos, 26, "_");
+  }
 }

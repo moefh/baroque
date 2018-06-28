@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "gl_error.h"
 #include "render.h"
+#include "editor.h"
 
 #define WINDOW_WIDTH   800
 #define WINDOW_HEIGHT  600
@@ -29,17 +30,23 @@ static void reset_viewport_callback(GLFWwindow *window, int width, int height)
 
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
-  if (action != GLFW_PRESS && action != GLFW_REPEAT)
-    return;
-  
-  switch (key) {
-  case GLFW_KEY_ESCAPE:
+  if (editor_handle_key(key, (action == GLFW_PRESS || action == GLFW_REPEAT) ? 1 : 0, mods) != 0)
     glfwSetWindowShouldClose(window, 1);
-    break;
+}
 
-  default:
-    break;
-  }
+static void char_callback(GLFWwindow *window, unsigned int codepoint)
+{
+  editor_handle_char(codepoint);
+}
+
+static void mouse_btn_callback(GLFWwindow *window, int btn, int action, int mods)
+{
+  editor_handle_mouse_button(btn, (action == GLFW_PRESS) ? 1 : 0, mods);
+}
+
+static void cursor_pos_callback(GLFWwindow *window, double x, double y)
+{
+  editor_handle_cursor_pos(x, y);
 }
 
 static int init_gfx()
@@ -66,6 +73,9 @@ static int init_gfx()
   glfwMakeContextCurrent(window);
   glfwSetFramebufferSizeCallback(window, reset_viewport_callback);
   glfwSetKeyCallback(window, key_callback);
+  glfwSetCharCallback(window, char_callback);
+  glfwSetMouseButtonCallback(window, mouse_btn_callback);
+  glfwSetCursorPosCallback(window, cursor_pos_callback);
   //glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
   glfwSwapInterval(1);
 
@@ -102,7 +112,8 @@ int main(void)
     glfwPollEvents();
     if (glfwWindowShouldClose(window))
       break;
-    
+
+    process_editor_step();
     render_screen();
     glfwSwapBuffers(window);
   }
