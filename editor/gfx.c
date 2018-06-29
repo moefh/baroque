@@ -16,7 +16,7 @@ int num_gfx_textures;
 struct GFX_MESH gfx_meshes[NUM_GFX_MESHES];
 struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
-static struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh)
+struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint32_t info)
 {
   struct GFX_MESH *gfx = NULL;
   for (int i = 0; i < num_gfx_meshes; i++) {
@@ -31,6 +31,8 @@ static struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh)
     gfx = &gfx_meshes[num_gfx_meshes++];
   }
   gfx->used = 1;
+  gfx->type = type;
+  gfx->info = info;
   
   GL_CHECK(glGenVertexArrays(1, &gfx->vtx_array_obj));
   GL_CHECK(glBindVertexArray(gfx->vtx_array_obj));
@@ -148,14 +150,12 @@ int upload_model(struct MODEL *model, uint32_t type, uint32_t info)
     gfx_textures[i] = NULL;
   
   for (int i = 0; i < model->n_meshes; i++) {
-    struct GFX_MESH *mesh = upload_model_mesh(model->meshes[i]);
+    struct GFX_MESH *mesh = upload_model_mesh(model->meshes[i], type, info + i);
     if (! mesh) {
       console("can't upload mesh\n");
       return 1;
     }
-    mesh->type = type;
-    mesh->info = info;
-    
+
     int tex_num = model->meshes[i]->tex0_index;
     if (tex_num != MODEL_TEXTURE_NONE) {
       struct GFX_TEXTURE *tex = gfx_textures[tex_num];
@@ -176,12 +176,9 @@ int upload_model(struct MODEL *model, uint32_t type, uint32_t info)
 
 struct GFX_MESH *upload_font(struct FONT *font)
 {
-  struct GFX_MESH *mesh = upload_model_mesh(font->mesh);
+  struct GFX_MESH *mesh = upload_model_mesh(font->mesh, GFX_MESH_TYPE_FONT, 0);
   if (! mesh)
     return NULL;
-  mesh->type = GFX_MESH_TYPE_FONT;
-  mesh->info = 0;
-  mat4_id(mesh->matrix);
   
   struct GFX_TEXTURE *tex = upload_model_texture(&font->texture);
   if (! tex)

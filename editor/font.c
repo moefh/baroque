@@ -6,6 +6,7 @@
 #include <stb_image.h>
 
 #include "font.h"
+#include "matrix.h"
 #include "debug.h"
 
 static struct MODEL_MESH *create_font_mesh(int tex_w, int tex_h)
@@ -19,6 +20,7 @@ static struct MODEL_MESH *create_font_mesh(int tex_w, int tex_h)
   struct MODEL_MESH *mesh = new_model_mesh(MODEL_MESH_VTX_POS_UV1, vtx_size, MODEL_MESH_IND_U16, ind_size, n_ind);
   if (! mesh)
     return NULL;
+  mat4_id(mesh->matrix);
 
   float u1 = 1.0 / (2*tex_w);
   float v1 = 1.0 / (2*tex_h);

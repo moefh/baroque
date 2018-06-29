@@ -30,8 +30,7 @@ static void reset_viewport_callback(GLFWwindow *window, int width, int height)
 
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
-  if (editor_handle_key(key, (action == GLFW_PRESS || action == GLFW_REPEAT) ? 1 : 0, mods) != 0)
-    glfwSetWindowShouldClose(window, 1);
+  editor_handle_key(key, (action == GLFW_PRESS || action == GLFW_REPEAT) ? 1 : 0, mods);
 }
 
 static void char_callback(GLFWwindow *window, unsigned int codepoint)
@@ -106,6 +105,7 @@ int main(void)
   glfwGetWindowSize(window, &width, &height);
   if (render_setup(width, height) != 0)
     goto err;
+  init_editor();
   
   debug("- Running main loop...\n");
   while (1) {
@@ -113,7 +113,8 @@ int main(void)
     if (glfwWindowShouldClose(window))
       break;
 
-    process_editor_step();
+    if (process_editor_step())
+      break;
     render_screen();
     glfwSwapBuffers(window);
   }

@@ -6,8 +6,9 @@
 #define NUM_GFX_MESHES   1024
 #define NUM_GFX_TEXTURES 1024
 
-#define GFX_MESH_TYPE_FONT 0
-#define GFX_MESH_TYPE_ROOM 1
+#define GFX_MESH_TYPE_ROOM 0
+#define GFX_MESH_TYPE_FONT 1
+#define GFX_MESH_TYPE_GRID 2
 
 struct GFX_MESH {
   GLuint vtx_array_obj;
@@ -35,8 +36,10 @@ extern struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
 struct FONT;
 struct MODEL;
+struct MODEL_MESH;
 
 struct GFX_MESH *upload_font(struct FONT *font);
+struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint32_t info);
 int upload_model(struct MODEL *model, uint32_t type, uint32_t info);
 
 #endif /* GFX_H_FILE */
