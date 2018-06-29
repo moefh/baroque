@@ -70,7 +70,7 @@ static struct GFX_MESH font_mesh;
 static struct GFX_TEXTURE font_texture;
 static struct GFX_FONT_SHADER font_shader;
 static float text_scale[2];
-static float text_color[3];
+static float text_color[4];
 
 static int load_shader(void)
 {
@@ -306,9 +306,7 @@ int render_setup(int width, int height)
 
   render_set_viewport(width, height);
 
-  text_color[0] = 0.9;
-  text_color[1] = 1.0;
-  text_color[2] = 0.3;
+  vec4_load(text_color, 1,1,1,1);
   
   glClearColor(0.0, 0.0, 0.4, 1.0);
   glEnable(GL_BLEND);
@@ -323,8 +321,10 @@ void render_set_viewport(int width, int height)
 {
   glViewport(0, 0, width, height);
   projection_aspect = (float) width / height;
-  text_scale[0] = 1.0 / 32.0;
-  text_scale[1] = -text_scale[0] * projection_aspect;
+
+  float text_base_size = 1.0 / 28.0;
+  text_scale[0] = text_base_size * 0.5;
+  text_scale[1] = text_base_size * projection_aspect;
 }
 
 static void get_creature_model_matrix(float *restrict mat_model, float *restrict mesh_matrix, struct CREATURE *creature)
@@ -375,7 +375,7 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
 }
 
-static void render_text(float x, float y, const char *text)
+static void render_text(float x, float y, float size, const char *text, size_t len)
 {
   float char_uv[2*FONT_MAX_CHARS_PER_DRAW];
   float text_pos[2];
@@ -385,28 +385,38 @@ static void render_text(float x, float y, const char *text)
 
   memset(char_uv, 0, sizeof(char_uv));
 
+  float size_x = text_scale[0] * size;
+  float size_y = text_scale[1] * size;
+  float uni_scale[2] = { size_x, -size_y };
+  
   GL_CHECK(glActiveTexture(GL_TEXTURE0));
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, font_mesh.texture_id));
-  GL_CHECK(glUniform2fv(font_shader.uni_text_scale, 1, text_scale));
-  GL_CHECK(glUniform3fv(font_shader.uni_text_color, 1, text_color));
+  GL_CHECK(glUniform2fv(font_shader.uni_text_scale, 1, uni_scale));
+  GL_CHECK(glUniform4fv(font_shader.uni_text_color, 1, text_color));
   GL_CHECK(glBindVertexArray(font_mesh.vtx_array_obj));
+
+  if (len == 0)
+    len = strlen(text);
   
-  float pos_x = 2.0 * x;
+  float pos_x = x;
   float pos_y = y;
   const char *cur_text = text;
-  while (*cur_text) {
-    text_pos[0] = 0.5 * pos_x - 1.0 / text_scale[0];
-    text_pos[1] = pos_y + 1.0 / text_scale[1];
+  const char *end_text = text + len;
+  while (*cur_text && cur_text < end_text) {
+    text_pos[0] = pos_x - 1.0 / size_x;
+    text_pos[1] = pos_y - 1.0 / size_y;
     
     int n_chars = 0;
     for (int i = 0; i < FONT_MAX_CHARS_PER_DRAW; i++) {
+      if (cur_text >= end_text)
+        break;
       unsigned char ch = *cur_text;
       if (ch == '\0')
         break;
       cur_text++;
       if (ch == '\n') {
         pos_y += 1.0;
-        pos_x = 2.0 * x;
+        pos_x = x;
         break;
       }
       if (ch < 32 || ch >= 128)
@@ -460,5 +470,5 @@ void render_screen(void)
 
   char fps[1024];
   snprintf(fps, sizeof(fps), "%4.1f fps", fps_counter.fps);
-  render_text(0, 0, fps);
+  render_text(0, 0, 1, fps, 0);
 }

@@ -2,6 +2,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 #include "editor.h"
 #include "debug.h"
@@ -15,14 +17,19 @@
 #define MOUSE_ACTION_ROTATE  1
 #define MOUSE_ACTION_MOVE    2
 
-typedef void (*command_func)(int argc, char **argv);
+typedef void (*command_func)(const char *line, int argc, char **argv);
 
 struct EDITOR_COMMAND {
   const char *name;
   command_func func;
 };
 
-struct EDITOR_MOUSE_ACTION {
+struct TEXT_SCREEN {
+  char text[EDITOR_SCREEN_LINES*EDITOR_SCREEN_COLS];
+  int cursor_col;
+};
+
+struct MOUSE_ACTION {
   int action;
   float mouse_x;
   float mouse_y;
@@ -34,7 +41,8 @@ struct EDITOR_MOUSE_ACTION {
 struct EDITOR editor;
 
 static struct EDITOR_COMMAND commands[];
-static struct EDITOR_MOUSE_ACTION action;
+static struct MOUSE_ACTION action;
+static struct TEXT_SCREEN screen;
 
 static struct {
   int argc;
@@ -70,12 +78,57 @@ static void run_command_line(const char *command)
 {
   if (parse_command_line(command) != 0)
     return;
+  if (cmdline.argc == 0)
+    return;
 
+  out_text("> %s\n", command);
   for (int i = 0; commands[i].name != NULL; i++) {
     if (strcmp(commands[i].name, cmdline.argv[0]) == 0) {
-      commands[i].func(cmdline.argc, cmdline.argv);
+      commands[i].func(command, cmdline.argc, cmdline.argv);
       return;
     }
+  }
+  out_text("** ERROR: unknown command\n");
+}
+
+static void scroll_screen(int lines)
+{
+  if (lines == 0)
+    return;
+  if (lines < 0 || lines >= EDITOR_SCREEN_LINES) {
+    memset(screen.text, 0, sizeof(screen.text));
+    return;
+  }
+  memmove(screen.text, screen.text + EDITOR_SCREEN_COLS*lines, EDITOR_SCREEN_COLS*(EDITOR_SCREEN_LINES-lines));
+  memset(screen.text + EDITOR_SCREEN_COLS*(EDITOR_SCREEN_LINES-lines), 0, EDITOR_SCREEN_COLS*lines);
+}
+
+static void clear_text_screen(void)
+{
+  memset(screen.text, 0, sizeof(screen.text));
+}
+
+void out_text(const char *fmt, ...)
+{
+  static char buf[1024];
+  
+  va_list ap;
+
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+
+  const char *p = buf;
+  while (*p) {
+    if (*p == '\n' || screen.cursor_col >= EDITOR_SCREEN_COLS) {
+      scroll_screen(1);
+      screen.cursor_col = 0;
+      if (*p == '\n') {
+        p++;
+        continue;
+      }
+    }
+    screen.text[(EDITOR_SCREEN_LINES-1)*EDITOR_SCREEN_COLS + screen.cursor_col++] = *p++;
   }
 }
 
@@ -86,6 +139,10 @@ void init_editor(void)
 
   vec4_load(editor.grid_color, 0.4, 0.4, 0.4, 1);
   vec3_load(editor.grid_pos, 0, 0, 0);
+
+  memset(screen.text, 0, sizeof(screen.text));
+  for (int i = 0; i < EDITOR_SCREEN_LINES; i++)
+    editor.text_screen[i] = &screen.text[i*EDITOR_SCREEN_COLS];
 }
 
 void editor_handle_cursor_pos(double x, double y)
@@ -153,7 +210,7 @@ void editor_handle_char(unsigned int codepoint)
   if (codepoint < 32 || codepoint >= 127)
     return;
 
-  if (input->line_len+1 >= MAX_EDIT_LINE_LEN)
+  if (input->line_len+1 >= EDITOR_MAX_INPUT_LINE_LEN)
     return;
 
   memmove(input->line + input->cursor_pos + 1, input->line + input->cursor_pos, input->line_len - input->cursor_pos + 1);
@@ -240,6 +297,11 @@ void editor_handle_key(int key, int press, int mods)
       editor.quit = 1;
     break;
 
+  case 'L':
+    if (mods & KEY_MOD_CTRL)
+      clear_text_screen();
+    break;
+    
   default:
     break;
   }
@@ -250,22 +312,81 @@ int process_editor_step(void)
   return editor.quit;
 }
 
-static void cmd_quit(int argc, char **argv)
+static void cmd_quit(const char *line, int argc, char **argv)
 {
   editor.quit = 1;
 }
 
-static void cmd_sel(int argc, char **argv)
+static void cmd_help(const char *line, int argc, char **argv)
 {
-  if (! cmdline.argv[1])
+  if (argc == 1) {
+    out_text("Commands:\n");
+    out_text("help [command]  Show help\n");
+    out_text("quit            Exit editor\n");
+    out_text("exit            Exit editor\n");
+    out_text("cls             Clear text\n");
+    out_text("sel N           Select room N\n");
     return;
-  long num = strtol(cmdline.argv[1], NULL, 0);
+  }
+
+  if (strcmp(argv[1], "help") == 0) {
+    out_text("USAGE: help\n");
+    out_text("       help command\n");
+    out_text("\nShow list of commands, or help about a specific command\n");
+    return;
+  }
+
+  if (strcmp(argv[1], "quit") == 0) {
+    out_text("USAGE: quit\n");
+    out_text("\nExit the editor\n");
+    return;
+  }
+  if (strcmp(argv[1], "exit") == 0) {
+    out_text("USAGE: exit\n");
+    out_text("\nExit the editor\n");
+    return;
+  }
+  if (strcmp(argv[1], "cls") == 0) {
+    out_text("USAGE: cls\n");
+    out_text("\nClear text from screen\n");
+    return;
+  }
+  if (strcmp(argv[1], "sel") == 0) {
+    out_text("USAGE: sel NUM\n");
+    out_text("\nSelect room NUM\n");
+    return;
+  }
+  out_text("Unknown command '%s'\n", argv[1]);
+}
+
+static void cmd_cls(const char *line, int argc, char **argv)
+{
+  clear_text_screen();
+}
+
+static void cmd_sel(const char *line, int argc, char **argv)
+{
+  if (argc != 2) {
+    out_text("** ERROR: expected room number\n");
+    return;
+  }
+  
+  char *end;
+  long num = strtol(argv[1], &end, 0);
+  if (end == argv[1]) {
+    out_text("** ERROR: invalid room number: '%s'\n", argv[1]);
+    return;
+  }
+  
   editor.selected_room = num;
+  out_text("Selected room %ld\n", num);
 }
 
 static struct EDITOR_COMMAND commands[] = {
   { "quit", cmd_quit },
   { "exit", cmd_quit },
+  { "help", cmd_help },
+  { "cls", cmd_cls },
   { "sel", cmd_sel },
   { NULL }
 };

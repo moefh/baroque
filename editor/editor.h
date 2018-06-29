@@ -3,6 +3,7 @@
 #ifndef EDITOR_H_FILE
 #define EDITOR_H_FILE
 
+#include "debug.h"
 #include "camera.h"
 
 #define KEY_MOD_SHIFT   (1<<0)
@@ -33,13 +34,17 @@ void editor_handle_key(int key, int press, int mods);
 void editor_handle_char(unsigned int codepoint);
 int process_editor_step(void);
 
-#define MAX_EDIT_LINE_LEN 128
+void out_text(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+#define EDITOR_MAX_INPUT_LINE_LEN  128
+#define EDITOR_SCREEN_LINES        50
+#define EDITOR_SCREEN_COLS         100
 
 struct EDITOR_INPUT_LINE {
   int active;
   size_t cursor_pos;
   size_t line_len;
-  char line[MAX_EDIT_LINE_LEN];
+  char line[EDITOR_MAX_INPUT_LINE_LEN];
 };
 
 struct EDITOR {
@@ -48,6 +53,7 @@ struct EDITOR {
   float grid_pos[3];
   float grid_color[4];
   struct CAMERA camera;
+  const char *text_screen[EDITOR_SCREEN_LINES];
   struct EDITOR_INPUT_LINE input;
 };
 
