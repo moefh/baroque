@@ -16,11 +16,44 @@ int num_gfx_textures;
 struct GFX_MESH gfx_meshes[NUM_GFX_MESHES];
 struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
-struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint32_t info)
+void gfx_free_texture(struct GFX_TEXTURE *tex)
+{
+  //console("-> freeing texture id %u\n", tex->id);
+  glDeleteTextures(1, &tex->id);
+  tex->use_count = 0;
+}
+
+int gfx_free_meshes(uint32_t type, uint32_t info)
+{
+  //console("-> freeing all meshes with type=%u, info=%u\n", type, info);
+  int n_released_meshes = 0;
+  for (int i = 0; i < num_gfx_meshes; i++) {
+    struct GFX_MESH *gfx = &gfx_meshes[i];
+    if (gfx->use_count != 0 && gfx->type == type && gfx->info == info) {
+      //console("-> freeing mesh %d\n", i);
+      n_released_meshes++;
+      gfx->use_count = 0;
+      GL_CHECK(glDeleteVertexArrays(1, &gfx->vtx_array_obj));
+      GL_CHECK(glDeleteBuffers(1, &gfx->vtx_buf_obj));
+      GL_CHECK(glDeleteBuffers(1, &gfx->index_buf_obj));
+
+      if (gfx->texture) {
+        gfx->texture->use_count--;
+        if (gfx->texture->use_count == 0)
+          gfx_free_texture(gfx->texture);
+      }
+    }
+  }
+
+  return n_released_meshes;
+}
+
+struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint32_t info, void *data)
 {
   struct GFX_MESH *gfx = NULL;
   for (int i = 0; i < num_gfx_meshes; i++) {
-    if (! gfx_meshes[i].used) {
+    if (gfx_meshes[i].use_count == 0) {
+      //console("-> uploading mesh %d\n", i);
       gfx = &gfx_meshes[i];
       break;
     }
@@ -28,11 +61,13 @@ struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint3
   if (! gfx) {
     if (num_gfx_meshes >= NUM_GFX_MESHES)
       return NULL;
+    //console("-> uploading mesh %d\n", num_gfx_meshes);
     gfx = &gfx_meshes[num_gfx_meshes++];
   }
-  gfx->used = 1;
+  gfx->use_count = 1;
   gfx->type = type;
   gfx->info = info;
+  gfx->data = data;
   
   GL_CHECK(glGenVertexArrays(1, &gfx->vtx_array_obj));
   GL_CHECK(glBindVertexArray(gfx->vtx_array_obj));
@@ -108,11 +143,11 @@ struct GFX_MESH *upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint3
   return gfx;
 }
 
-static struct GFX_TEXTURE *upload_model_texture(struct MODEL_TEXTURE *texture)
+struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture)
 {
   struct GFX_TEXTURE *gfx = NULL;
   for (int i = 0; i < num_gfx_textures; i++) {
-    if (! gfx_textures[i].used) {
+    if (gfx_textures[i].use_count == 0) {
       gfx = &gfx_textures[i];
       break;
     }
@@ -122,9 +157,10 @@ static struct GFX_TEXTURE *upload_model_texture(struct MODEL_TEXTURE *texture)
       return NULL;
     gfx = &gfx_textures[num_gfx_textures++];
   }
-  gfx->used = 1;
+  gfx->use_count = 1;
   
   GL_CHECK(glGenTextures(1, &gfx->id));
+  //console("-> uploading texture id %d\n", gfx->id);
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, gfx->id));
 
   GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
@@ -143,16 +179,16 @@ static struct GFX_TEXTURE *upload_model_texture(struct MODEL_TEXTURE *texture)
   return gfx;
 }
 
-int upload_model(struct MODEL *model, uint32_t type, uint32_t info)
+int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *data)
 {
   struct GFX_TEXTURE *gfx_textures[64];
   for (int i = 0; i < 64; i++)
     gfx_textures[i] = NULL;
   
   for (int i = 0; i < model->n_meshes; i++) {
-    struct GFX_MESH *mesh = upload_model_mesh(model->meshes[i], type, info + i);
+    struct GFX_MESH *mesh = gfx_upload_model_mesh(model->meshes[i], type, info, data);
     if (! mesh) {
-      console("can't upload mesh\n");
+      console("** ERROR: can't upload mesh\n");
       return 1;
     }
 
@@ -160,30 +196,31 @@ int upload_model(struct MODEL *model, uint32_t type, uint32_t info)
     if (tex_num != MODEL_TEXTURE_NONE) {
       struct GFX_TEXTURE *tex = gfx_textures[tex_num];
       if (! tex) {
-        tex = upload_model_texture(&model->textures[tex_num]);
+        tex = gfx_upload_model_texture(&model->textures[tex_num]);
         if (! tex) {
-          console("can't upload texture\n");
+          console("** ERROR: can't upload texture\n");
           return 1;
         }
         gfx_textures[tex_num] = tex;
+      } else {
+        tex->use_count++;
       }
-      mesh->texture_id = tex->id;
+      mesh->texture = tex;
     }
   }
 
   return 0;
 }
 
-struct GFX_MESH *upload_font(struct FONT *font)
+struct GFX_MESH *gfx_upload_font(struct FONT *font)
 {
-  struct GFX_MESH *mesh = upload_model_mesh(font->mesh, GFX_MESH_TYPE_FONT, 0);
+  struct GFX_MESH *mesh = gfx_upload_model_mesh(font->mesh, GFX_MESH_TYPE_FONT, 0, NULL);
   if (! mesh)
     return NULL;
   
-  struct GFX_TEXTURE *tex = upload_model_texture(&font->texture);
+  struct GFX_TEXTURE *tex = gfx_upload_model_texture(&font->texture);
   if (! tex)
     return NULL;
-  
-  mesh->texture_id = tex->id;
+  mesh->texture = tex;
   return mesh;
 }

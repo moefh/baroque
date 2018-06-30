@@ -116,6 +116,13 @@ static inline void vec3_add(float *restrict out, float *restrict a, const float 
   out[2] = a[2] + b[2];
 }
 
+static inline void vec3_sub(float *restrict out, float *restrict a, const float *restrict b)
+{
+  out[0] = a[0] - b[0];
+  out[1] = a[1] - b[1];
+  out[2] = a[2] - b[2];
+}
+
 // float:
 static inline float clamp(float val, float min, float max)
 {

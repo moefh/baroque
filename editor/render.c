@@ -1,6 +1,7 @@
 /* render.c */
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -55,6 +56,8 @@ static struct GFX_MESH *font_mesh;
 static float text_scale[2];
 static float text_color[4];
 
+static void render_format(float x, float y, float size, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+
 static int load_shader(void)
 {
   // model
@@ -104,7 +107,7 @@ static int load_font(void)
     return 1;
   }
 
-  font_mesh = upload_font(&font);
+  font_mesh = gfx_upload_font(&font);
   
   free_font(&font);
   return (font_mesh != NULL) ? 0 : 1;
@@ -118,7 +121,7 @@ static int load_grid(void)
     return 1;
   }
   
-  grid_mesh = upload_model_mesh(mesh, GFX_MESH_TYPE_GRID, 0);
+  grid_mesh = gfx_upload_model_mesh(mesh, GFX_MESH_TYPE_GRID, 0, NULL);
 
   free_grid(mesh);
   return (grid_mesh != NULL) ? 0 : 1;
@@ -135,27 +138,15 @@ int render_setup(int width, int height)
   if (load_grid() != 0)
     return 1;
 
-#if 1
-  {
-    // test:
-    struct MODEL model;
-    if (read_glb_model(&model, "data/world.glb") != 0 ||
-        upload_model(&model, GFX_MESH_TYPE_ROOM, 0) != 0) {
-      debug("ERROR reading/uploading model\n");
-      return 1;
-    }
-    free_model(&model);
-  }
-#endif
-    
   render_set_viewport(width, height);
   set_text_color(1, 1, 1, 1);
 
   glClearColor(0.2, 0.2, 0.2, 1.0);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glDisable(GL_CULL_FACE);
+  glEnable(GL_CULL_FACE);
   glFrontFace(GL_CCW);
+  glDisable(GL_DEPTH_TEST);
 
   return 0;
 }
@@ -176,11 +167,18 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   float alpha;
   switch (mesh->type) {
   case GFX_MESH_TYPE_ROOM:
-    mat4_copy(mat_model, mesh->matrix);
-    if (editor.selected_room == mesh->info)
-      alpha = 0.75;
-    else
-      alpha = 0.25;
+    {
+      struct EDITOR_ROOM *room = mesh->data;
+      if (room == editor.selected_room)
+        alpha = 0.75;
+      else
+        alpha = 0.25;
+      
+      mat4_copy(mat_model, mesh->matrix);
+      mat_model[3]  += room->pos[0];
+      mat_model[7]  += room->pos[1];
+      mat_model[11] += room->pos[2];
+    }
     break;
 
   default:
@@ -203,8 +201,10 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   if (shader.uni_alpha >= 0)
     GL_CHECK(glUniform1f(shader.uni_alpha, alpha));
   
-  GL_CHECK(glActiveTexture(GL_TEXTURE0));
-  GL_CHECK(glBindTexture(GL_TEXTURE_2D, mesh->texture_id));
+  if (mesh->texture) {
+    GL_CHECK(glActiveTexture(GL_TEXTURE0));
+    GL_CHECK(glBindTexture(GL_TEXTURE_2D, mesh->texture->id));
+  }
   GL_CHECK(glBindVertexArray(mesh->vtx_array_obj));
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
 }
@@ -239,7 +239,7 @@ static void render_text(float x, float y, float size, const char *text, size_t l
   float uni_scale[2] = { size_x, -size_y };
   
   GL_CHECK(glActiveTexture(GL_TEXTURE0));
-  GL_CHECK(glBindTexture(GL_TEXTURE_2D, font_mesh->texture_id));
+  GL_CHECK(glBindTexture(GL_TEXTURE_2D, font_mesh->texture->id));
   GL_CHECK(glUniform2fv(font_shader.uni_text_scale, 1, uni_scale));
   GL_CHECK(glUniform4fv(font_shader.uni_text_color, 1, text_color));
   GL_CHECK(glBindVertexArray(font_mesh->vtx_array_obj));
@@ -283,6 +283,19 @@ static void render_text(float x, float y, float size, const char *text, size_t l
   }
 }
 
+static void render_format(float x, float y, float size, const char *fmt, ...)
+{
+  static char buf[1024];
+  
+  va_list ap;
+
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+
+  render_text(x, y, size, buf, 0);
+}
+
 void render_screen(void)
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -301,7 +314,7 @@ void render_screen(void)
   float mat_view_projection[16];
   mat4_mul(mat_view_projection, mat_projection, mat_view);
 
-  glEnable(GL_DEPTH_TEST);
+  //glEnable(GL_DEPTH_TEST);
   GL_CHECK(glUseProgram(grid_shader.id));
   GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, editor.grid_color));
   render_grid(grid_mesh, mat_view_projection);
@@ -311,13 +324,25 @@ void render_screen(void)
   GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
   GL_CHECK(glUniform3fv(shader.uni_camera_pos, 1, camera_pos));
   for (int i = 0; i < num_gfx_meshes; i++) {
-    if (gfx_meshes[i].used)
+    if (gfx_meshes[i].use_count != 0)
       render_mesh(&gfx_meshes[i], mat_view_projection, mat_view);
   }
 
-  glDisable(GL_DEPTH_TEST);  
+  //glDisable(GL_DEPTH_TEST);
   GL_CHECK(glUseProgram(font_shader.id));
   GL_CHECK(glUniform1i(font_shader.uni_tex1, 0));
+  set_text_color(1, 1, 1, 1);
+  if (editor.selected_room) {
+    render_format(0, 0, 1, "(%+7.2f,%+7.2f,%+7.2f) %s",
+                  editor.selected_room->pos[0],
+                  editor.selected_room->pos[1],
+                  editor.selected_room->pos[2],
+                  editor.selected_room->name);
+  }
+  render_format(80, 0, 1, "view (%+7.2f,%+7.2f,%+7.2f)",
+                editor.camera.center[0],
+                editor.camera.center[1],
+                editor.camera.center[2]);
   set_text_color(1, 1, 1, 0.3);
   for (int i = 0; i < 10; i++)
     render_text(0, 21+i, 1, editor.text_screen[EDITOR_SCREEN_LINES-10+i], EDITOR_SCREEN_COLS);
