@@ -27,7 +27,8 @@ void main()
   float specular = 0.8 * pow(max(dot(camera_dir, reflect_dir), 0.0), 32);
 
   vec4 tex_rgba = texture(tex1, frag_uv);
-  tex_rgba.rgb = 0.75 + 0.25 * tex_rgba.rgb;
+  //tex_rgba.rgb = 0.75 + 0.25 * tex_rgba.rgb;
 
-  frag = color * vec4(clamp(ambient + diffuse + specular, 0.0, 1.0) * tex_rgba.rgb, tex_rgba.a);
+  //frag = color * vec4(clamp(ambient + diffuse + specular, 0.0, 1.0) * tex_rgba.rgb, tex_rgba.a);
+  frag = vec4(clamp(ambient + diffuse + specular, 0.0, 1.0) * tex_rgba.rgb, tex_rgba.a * color.a);
 }

@@ -211,10 +211,10 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
 }
 
-static void render_grid(struct GFX_MESH *mesh, float *mat_view_projection)
+static void render_grid(struct GFX_MESH *mesh, float *mat_view_projection, float *pos)
 {
   float mat_model[16];
-  mat4_load_translation(mat_model, editor.grid_pos[0], editor.grid_pos[1], editor.grid_pos[2]);
+  mat4_load_translation(mat_model, pos[0], pos[1], pos[2]);
   
   float mat_model_view_projection[16];
   mat4_mul(mat_model_view_projection, mat_view_projection, mat_model);
@@ -318,9 +318,21 @@ void render_screen(void)
 
   //glEnable(GL_DEPTH_TEST);
   GL_CHECK(glUseProgram(grid_shader.id));
-  GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, editor.grid_color));
-  render_grid(grid_mesh, mat_view_projection);
-
+  if (editor.selected_room) {
+    struct EDITOR_ROOM *room = editor.selected_room;
+    float color[4];
+    for (int i = 0; i < room->n_neighbors; i++) {
+      vec4_copy(color, room->neighbors[i]->display_color);
+      color[3] *= 0.5;
+      GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, color));
+      render_grid(grid_mesh, mat_view_projection, room->neighbors[i]->pos);
+    }
+    vec4_copy(color, room->display_color);
+    color[3] *= 0.5;
+    GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, color));
+    render_grid(grid_mesh, mat_view_projection, room->pos);
+  }
+  
   GL_CHECK(glUseProgram(shader.id));
   GL_CHECK(glUniform1i(shader.uni_tex1, 0));
   GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
@@ -346,13 +358,13 @@ void render_screen(void)
       render_format(0, 1+i, 0.75, "+ %s", room->neighbors[i]->name);
   }
   set_text_color(1, 1, 1, 0.75);
-  render_format(110, 0, 0.75, "view (%+7.2f,%+7.2f,%+7.2f)",
+  render_format(120, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f)",
                 editor.camera.center[0],
                 editor.camera.center[1],
                 editor.camera.center[2]);
-  set_text_color(1, 1, 1, 0.3);
-  for (int i = 0; i < 10; i++)
-    render_text(0, 21+i, 1, editor.text_screen[EDITOR_SCREEN_LINES-10+i], EDITOR_SCREEN_COLS);
+  set_text_color(1, 1, 1, 0.8);
+  for (int i = 0; i < 20; i++)
+    render_text(0, 21+i, 0.75, editor.text_screen[EDITOR_SCREEN_LINES-20+i], EDITOR_SCREEN_COLS);
   if (editor.input.active) {
     set_text_color(1, 1, 0, 1); render_text(0, 30, 1, ">", 0);
     set_text_color(1, 1, 1, 1); render_text(2, 30, 1, editor.input.line, 0);

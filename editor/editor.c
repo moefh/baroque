@@ -28,11 +28,16 @@
 #define MOUSE_ACTION_MOVE_ROOM       4
 #define MOUSE_ACTION_SEL_NEIGHBOR    5
 
+#define MOUSE_ACTION_ALLOW_AXIS_X  (1<<0)
+#define MOUSE_ACTION_ALLOW_AXIS_Y  (1<<1)
+#define MOUSE_ACTION_ALLOW_AXIS_Z  (1<<2)
+
 typedef void (*command_func)(const char *line, int argc, char **argv);
 
 struct EDITOR_COMMAND {
   const char *name;
   command_func func;
+  const char *description;
 };
 
 struct TEXT_SCREEN {
@@ -42,6 +47,7 @@ struct TEXT_SCREEN {
 
 struct MOUSE_ACTION {
   int action_id;
+  int allow_axis_flags;
   float mouse_x;
   float mouse_y;
   float start_x;
@@ -55,11 +61,11 @@ struct MOUSE_ACTION {
 struct EDITOR editor;
 
 static const float room_normal_color[4] =   { 1.0, 1.0, 1.0, 0.25 };
-static const float room_selected_color[4] = { 1.0, 1.0, 1.0, 0.75 };
+static const float room_selected_color[4] = { 1.0, 1.0, 1.0, 0.80 };
 static const float room_neighbor_color[4] = { 0.5, 0.5, 1.0, 0.75 };
 static const float room_hover_color[4] =    { 1.0, 0.0, 0.0, 0.75 };
 
-static struct EDITOR_COMMAND commands[];
+static const struct EDITOR_COMMAND commands[];
 static struct MOUSE_ACTION action;
 static struct TEXT_SCREEN screen;
 static struct {
@@ -222,7 +228,7 @@ static void run_command_line(const char *command)
   out_text("** ERROR: unknown command\n");
 }
 
-static int autocomplete(char *line, size_t line_size, size_t *p_cursor_pos, struct EDITOR_COMMAND **comp, size_t comp_size)
+static int autocomplete(char *line, size_t line_size, size_t *p_cursor_pos, const struct EDITOR_COMMAND **comp, size_t comp_size)
 {
   size_t cursor_pos = *p_cursor_pos;
   size_t frag_pos = cursor_pos;
@@ -327,6 +333,8 @@ void init_editor(void)
   memset(screen.text, 0, sizeof(screen.text));
   for (int i = 0; i < EDITOR_SCREEN_LINES; i++)
     editor.text_screen[i] = &screen.text[i*EDITOR_SCREEN_COLS];
+
+  out_text("Type ENTER help ENTER to get help\n");
 }
 
 void editor_handle_mouse_scroll(double x_off, double y_off)
@@ -367,9 +375,9 @@ void editor_handle_cursor_pos(double x, double y)
     vec3_scale(move, 0.05);
     vec3_add(editor.camera.center, action.camera.center, move);
 
-    editor.camera.center[0] = floor(4.0 * editor.camera.center[0]) * 0.25;
-    editor.camera.center[1] = floor(4.0 * editor.camera.center[1]) * 0.25;
-    editor.camera.center[2] = floor(4.0 * editor.camera.center[2]) * 0.25;
+    editor.camera.center[0] = snap_to_grid(editor.camera.center[0], 0.25);
+    editor.camera.center[1] = snap_to_grid(editor.camera.center[1], 0.25);
+    editor.camera.center[2] = snap_to_grid(editor.camera.center[2], 0.25);
     vec3_copy(editor.grid_pos, editor.camera.center);
     return;
   }
@@ -380,23 +388,32 @@ void editor_handle_cursor_pos(double x, double y)
     float dx = x - action.start_x;
     float dy = y - action.start_y;
 
-    float front[3], left[3];
+    float front[3], left[3], up[3];
     get_camera_vectors(&editor.camera, front, left);
-    front[1] = 0;
-    left[1] = 0;
-    vec3_normalize(front);
-    vec3_normalize(left);
+    vec3_cross(up, front, left);
+    if (! (action.allow_axis_flags & MOUSE_ACTION_ALLOW_AXIS_X)) {
+      up[0] = 0;
+      left[0] = 0;
+    }
+    if (! (action.allow_axis_flags & MOUSE_ACTION_ALLOW_AXIS_Y)) {
+      up[1] = 0;
+      left[1] = 0;
+    }
+    if (! (action.allow_axis_flags & MOUSE_ACTION_ALLOW_AXIS_Z)) {
+      up[2] = 0;
+      left[2] = 0;
+    }
     vec3_scale(left,  -dx);
-    vec3_scale(front, -dy);
+    vec3_scale(up, -dy);
 
     float move[3];
-    vec3_add(move, front, left);
-    vec3_scale(move, 0.05);
+    vec3_add(move, up, left);
+    vec3_scale(move, 0.04);
     vec3_add(editor.selected_room->pos, action.room_pos, move);
 
-    editor.selected_room->pos[0] = floor(4.0 * editor.selected_room->pos[0]) * 0.25;
-    editor.selected_room->pos[1] = floor(4.0 * editor.selected_room->pos[1]) * 0.25;
-    editor.selected_room->pos[2] = floor(4.0 * editor.selected_room->pos[2]) * 0.25;
+    editor.selected_room->pos[0] = snap_to_grid(editor.selected_room->pos[0], 0.25);
+    editor.selected_room->pos[1] = snap_to_grid(editor.selected_room->pos[1], 0.25);
+    editor.selected_room->pos[2] = snap_to_grid(editor.selected_room->pos[2], 0.25);
     return;
   }
 
@@ -594,7 +611,7 @@ void editor_handle_key(int key, int press, int mods)
 
   case KEY_TAB:
     if (input->active) {
-      struct EDITOR_COMMAND *completions[16];
+      const struct EDITOR_COMMAND *completions[16];
       autocomplete(editor.input.line, sizeof(editor.input.line), &editor.input.cursor_pos,
                    completions, sizeof(completions)/sizeof(*completions));
       editor.input.line_len = strlen(editor.input.line);
@@ -622,16 +639,33 @@ void editor_handle_key(int key, int press, int mods)
     break;
 
   case 'G':
-    if (! editor.input.active && mods == 0 && editor.selected_room)
+    if (! editor.input.active && mods == 0 && editor.selected_room) {
       start_mouse_action(MOUSE_ACTION_MOVE_ROOM);
+      action.allow_axis_flags = MOUSE_ACTION_ALLOW_AXIS_X | MOUSE_ACTION_ALLOW_AXIS_Z;
+    }
     break;
 
   case 'N':
     if (! editor.input.active && mods == 0 && editor.selected_room)
       start_mouse_action(MOUSE_ACTION_SEL_NEIGHBOR);
     break;
-    
+
   case 'X':
+    if (action.action_id == MOUSE_ACTION_MOVE_ROOM && ! editor.input.active)
+      action.allow_axis_flags = (mods & KEY_MOD_SHIFT) ? ~MOUSE_ACTION_ALLOW_AXIS_X : MOUSE_ACTION_ALLOW_AXIS_X;
+    break;
+    
+  case 'Y':
+    if (action.action_id == MOUSE_ACTION_MOVE_ROOM && ! editor.input.active)
+      action.allow_axis_flags = (mods & KEY_MOD_SHIFT) ? ~MOUSE_ACTION_ALLOW_AXIS_Y : MOUSE_ACTION_ALLOW_AXIS_Y;
+    break;
+    
+  case 'Z':
+    if (action.action_id == MOUSE_ACTION_MOVE_ROOM && ! editor.input.active)
+      action.allow_axis_flags = (mods & KEY_MOD_SHIFT) ? ~MOUSE_ACTION_ALLOW_AXIS_Z : MOUSE_ACTION_ALLOW_AXIS_Z;
+    break;
+    
+  case 'Q':
     if (! editor.input.active && (mods & KEY_MOD_CTRL))
       editor.quit = 1;
     break;
@@ -713,7 +747,7 @@ static void cmd_cls(const char *line, int argc, char **argv)
 static void cmd_sel(const char *line, int argc, char **argv)
 {
   if (argc != 2) {
-    out_text("** ERROR: expected room name\n");
+    out_text("USAGE: sel name\n");
     return;
   }
   const char *name = argv[1];
@@ -725,13 +759,13 @@ static void cmd_sel(const char *line, int argc, char **argv)
     return;
   }
 
-  out_text("** ERROR: unknown room '%s'\n", name);
+  out_text("** ERROR: room '%s' not found\n", name);
 }
 
 static void cmd_add(const char *line, int argc, char **argv)
 {
   if (argc != 2) {
-    out_text("** USAGE: add name\n");
+    out_text("USAGE: add name\n");
     return;
   }
   const char *name = argv[1];
@@ -754,7 +788,8 @@ static void cmd_add(const char *line, int argc, char **argv)
 static void cmd_remove(const char *line, int argc, char **argv)
 {
   if (argc != 2) {
-    out_text("** USAGE: remove name\n");
+    out_text("USAGE: remove name\n");
+    out_text("   OR: remove .\n");
     return;
   }
   char name[EDITOR_ROOM_NAME_LEN];
@@ -797,14 +832,38 @@ static void cmd_info(const char *line, int argc, char **argv)
   out_text("  center=(%+f,%+f,%+f)\n", editor.camera.center[0], editor.camera.center[1], editor.camera.center[2]);
 }
 
-static struct EDITOR_COMMAND commands[] = {
-  { "quit", cmd_quit },
-  { "exit", cmd_quit },
-  { "cls", cmd_cls },
-  { "sel", cmd_sel },
-  { "add", cmd_add },
-  { "remove", cmd_remove },
-  { "ls", cmd_ls },
-  { "info", cmd_info },
+static void cmd_help(const char *line, int argc, char **argv)
+{
+  for (int i = 0; commands[i].name != NULL; i++)
+    out_text("%-10s %s\n", commands[i].name, commands[i].description);
+}
+
+static void cmd_keys(const char *line, int argc, char **argv)
+{
+  out_text("\n");
+  out_text("keys:\n");
+  out_text("G       Grab (move) selected room\n");
+  out_text("N       Add/remove neighbors (press N, left click on a room)\n");
+  out_text("X,Y,Z   While moving room, limit movement to axis\n");
+  out_text("CTRL+L  Clear text\n");
+
+  out_text("\n");
+  out_text("mouse:\n");
+  out_text("LEFT    Confirm command\n");
+  out_text("MIDDLE  Move (with SHIFT) or rotate camera\n");
+  out_text("RIGHT   Cancel command / select room\n");
+  out_text("SCROLL  Zoom\n");
+}
+
+static const struct EDITOR_COMMAND commands[] = {
+  { "keys",     cmd_keys,     "Show key/mouse shortcuts" },
+  { "quit",     cmd_quit,     "Quit" },
+  { "cls",      cmd_cls,      "Clear text" },
+  { "sel",      cmd_sel,      "Select room" },
+  { "add",      cmd_add,      "Add room from model file" },
+  { "remove",   cmd_remove,   "Remove room" },
+  { "ls",       cmd_ls,       "List rooms" },
+  { "info",     cmd_info,     "Get camera info" },
+  { "help",     cmd_help,     "Show command list" },
   { NULL }
 };

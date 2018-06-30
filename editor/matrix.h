@@ -142,4 +142,9 @@ static inline float clamp(float val, float min, float max)
   return val;
 }
 
+static inline float snap_to_grid(float val, float grid_spacing)
+{
+  return round(val / grid_spacing) * grid_spacing;
+}
+
 #endif /* MATRIX_H_FILE */
