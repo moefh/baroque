@@ -17,11 +17,16 @@
 #define MAX_COMMAND_ARGS  32
 #define MAX_COMMAND_LEN   128
 
-#define MOUSE_ACTION_NONE        0
-#define MOUSE_ACTION_ROTATE_CAM  1
-#define MOUSE_ACTION_MOVE_CAM    2
-#define MOUSE_ACTION_ZOOM_CAM    3
-#define MOUSE_ACTION_MOVE_ROOM   4
+#define MOUSE_BUTTON_LEFT   0
+#define MOUSE_BUTTON_RIGHT  1
+#define MOUSE_BUTTON_MIDDLE 2
+
+#define MOUSE_ACTION_NONE            0
+#define MOUSE_ACTION_ROTATE_CAM      1
+#define MOUSE_ACTION_MOVE_CAM        2
+#define MOUSE_ACTION_ZOOM_CAM        3
+#define MOUSE_ACTION_MOVE_ROOM       4
+#define MOUSE_ACTION_SEL_NEIGHBOR    5
 
 typedef void (*command_func)(const char *line, int argc, char **argv);
 
@@ -43,9 +48,16 @@ struct MOUSE_ACTION {
   float start_y;
   struct CAMERA camera;
   float room_pos[3];
+  struct EDITOR_ROOM *hover_room;
+  float hover_room_save_color[4];
 };
 
 struct EDITOR editor;
+
+static const float room_normal_color[4] =   { 1.0, 1.0, 1.0, 0.25 };
+static const float room_selected_color[4] = { 1.0, 1.0, 1.0, 0.75 };
+static const float room_neighbor_color[4] = { 0.5, 0.5, 1.0, 0.75 };
+static const float room_hover_color[4] =    { 1.0, 0.0, 0.0, 0.75 };
 
 static struct EDITOR_COMMAND commands[];
 static struct MOUSE_ACTION action;
@@ -72,6 +84,7 @@ static struct EDITOR_ROOM *new_room(const char *name)
   room->n_tiles_x = 0;
   room->n_tiles_y = 0;
   vec3_load(room->pos, 0, 0, 0);
+  vec4_load(room->display_color, 1,1,1,1);
 
   return room;
 }
@@ -89,6 +102,48 @@ static int free_room(struct EDITOR_ROOM *room)
   return 0;
 }
 
+static void set_room_neighbor_color(struct EDITOR_ROOM *room, const float *color)
+{
+  for (int i = 0; i < room->n_neighbors; i++)
+    vec4_copy(room->neighbors[i]->display_color, color);
+}
+
+static void select_room(struct EDITOR_ROOM *room)
+{
+  if (editor.selected_room && editor.selected_room != room) {
+    vec4_copy(editor.selected_room->display_color, room_normal_color);
+    set_room_neighbor_color(editor.selected_room, room_normal_color);
+  }
+  
+  editor.selected_room = room;
+  if (room) {
+    vec4_copy(room->display_color, room_selected_color);
+    set_room_neighbor_color(room, room_neighbor_color);
+  }
+}
+
+static void toggle_room_neighbor(struct EDITOR_ROOM *room, struct EDITOR_ROOM *neighbor)
+{
+  if (room == NULL || neighbor == NULL || room == neighbor)
+    return;
+  for (int i = 0; i < room->n_neighbors; i++) {
+    if (room->neighbors[i] == neighbor) {
+      if (action.action_id == MOUSE_ACTION_SEL_NEIGHBOR && room->neighbors[i] == action.hover_room)
+        vec4_copy(action.hover_room_save_color, room_normal_color);
+      room->n_neighbors--;
+      memmove(room->neighbors + i, room->neighbors + i + 1, (room->n_neighbors-i) * sizeof(*room->neighbors));
+      if (room == editor.selected_room)
+        select_room(room);
+      return;
+    }
+  }
+  if (room->n_neighbors+1 < EDITOR_ROOM_MAX_NEIGHBORS) {
+    room->neighbors[room->n_neighbors++] = neighbor;
+    if (room == editor.selected_room)
+      select_room(room);
+  }
+}
+
 static struct EDITOR_ROOM *get_room_by_name(const char *name)
 {
   for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
@@ -96,6 +151,34 @@ static struct EDITOR_ROOM *get_room_by_name(const char *name)
       return room;
   }
   return NULL;
+}
+
+static struct EDITOR_ROOM *get_room_at_screen_pos(int screen_x, int screen_y)
+{
+  float pos[3], vec[3];
+  get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
+  
+  // calculate click = intersection of line (vec+pos) with plane y=0
+  float alpha = -pos[1] / vec[1];
+  float click[3] = {
+    alpha*vec[0] + pos[0],
+    alpha*vec[1] + pos[1],
+    alpha*vec[2] + pos[2],
+  };
+
+  // select room with center closest to click
+  float sel_dist = 0;
+  struct EDITOR_ROOM *sel = NULL;
+  for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
+    float delta[3];
+    vec3_sub(delta, room->pos, click);
+    float dist = vec3_dot(delta, delta);
+    if (sel == NULL || sel_dist > dist) {
+      sel = room;
+      sel_dist = dist;
+    }
+  }
+  return sel;
 }
 
 static int parse_command_line(const char *command)
@@ -316,6 +399,19 @@ void editor_handle_cursor_pos(double x, double y)
     editor.selected_room->pos[2] = floor(4.0 * editor.selected_room->pos[2]) * 0.25;
     return;
   }
+
+  if (action.action_id == MOUSE_ACTION_SEL_NEIGHBOR) {
+    struct EDITOR_ROOM *sel = get_room_at_screen_pos(action.mouse_x, action.mouse_y);
+    if (sel != action.hover_room) {
+      if (action.hover_room)
+        vec4_copy(action.hover_room->display_color, action.hover_room_save_color);
+      if (sel) {
+        vec4_copy(action.hover_room_save_color, sel->display_color);
+        vec4_copy(sel->display_color, room_hover_color);
+        action.hover_room = sel;
+      }
+    }
+  }
 }
 
 static void start_mouse_action(int action_id)
@@ -324,6 +420,7 @@ static void start_mouse_action(int action_id)
   action.start_x = action.mouse_x;
   action.start_y = action.mouse_y;
   action.camera = editor.camera;
+  action.hover_room = NULL;
   if (editor.selected_room)
     vec3_copy(action.room_pos, editor.selected_room->pos);
   else
@@ -332,6 +429,11 @@ static void start_mouse_action(int action_id)
 
 static void end_mouse_action(void)
 {
+  if (action.action_id == MOUSE_ACTION_SEL_NEIGHBOR && action.hover_room) {
+    vec4_copy(action.hover_room->display_color, action.hover_room_save_color);
+    select_room(editor.selected_room);
+  }
+
   action.action_id = MOUSE_ACTION_NONE;
 }
 
@@ -339,65 +441,66 @@ void editor_handle_mouse_button(int button, int press, int mods)
 {
   //console("mouse button %d %s, mods=%x\n", button, (press) ? "pressed" : "released", mods);
 
-  if (button == 0) {
+  if (button == MOUSE_BUTTON_LEFT) {
     if (! press)
       return;
 
-    if (action.action_id == MOUSE_ACTION_MOVE_ROOM)
+    switch (action.action_id) {
+    case MOUSE_ACTION_MOVE_ROOM:
       end_mouse_action();
+      break;
+
+    case MOUSE_ACTION_SEL_NEIGHBOR:
+      {
+        struct EDITOR_ROOM *sel = get_room_at_screen_pos(action.mouse_x, action.mouse_y);
+        if (sel)
+          toggle_room_neighbor(editor.selected_room, sel);
+        end_mouse_action();
+      }
+      break;
+    }
+    
     return;
   }
 
-  if (button == 1) {
+  if (button == MOUSE_BUTTON_RIGHT) {
     if (! press)
       return;
-    if (action.action_id == MOUSE_ACTION_MOVE_ROOM) {
+    
+    switch (action.action_id) {
+    case MOUSE_ACTION_MOVE_ROOM:
       vec3_copy(editor.selected_room->pos, action.room_pos);
       end_mouse_action();
-      return;
-    }
-    
-    float pos[3], vec[3];
-    get_screen_ray(&editor.camera, pos, vec, projection_fovy, action.mouse_x, action.mouse_y, viewport_width, viewport_height);
-    
-    // calculate click = intersection of line (vec+pos) with plane y=0
-    float alpha = -pos[1] / vec[1];
-    float click[3] = {
-      alpha*vec[0] + pos[0],
-      alpha*vec[1] + pos[1],
-      alpha*vec[2] + pos[2],
-    };
+      break;
 
-    // select room with center closest to click
-    float sel_dist = 0;
-    struct EDITOR_ROOM *sel = NULL;
-    for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
-      float delta[3];
-      vec3_sub(delta, room->pos, click);
-      float dist = vec3_dot(delta, delta);
-      if (sel == NULL || sel_dist > dist) {
-        sel = room;
-        sel_dist = dist;
+    case MOUSE_ACTION_NONE:
+      {
+        struct EDITOR_ROOM *sel = get_room_at_screen_pos(action.mouse_x, action.mouse_y);
+        select_room(sel);
       }
+      break;
+
+    default:
+      end_mouse_action();
     }
-    if (sel)
-      editor.selected_room = sel;
     return;
   }
   
-  if (button == 2) {
+  if (button == MOUSE_BUTTON_MIDDLE) {
     if (! press) {
       if (action.action_id == MOUSE_ACTION_MOVE_CAM || action.action_id == MOUSE_ACTION_ROTATE_CAM)
         end_mouse_action();
       return;
     }
-    if (action.action_id != MOUSE_ACTION_NONE)
-      return;
-    
-    if (mods & KEY_MOD_SHIFT)
-      start_mouse_action(MOUSE_ACTION_MOVE_CAM);
-    else
-      start_mouse_action(MOUSE_ACTION_ROTATE_CAM);
+
+    switch (action.action_id) {
+    case MOUSE_ACTION_NONE:
+      if (mods & KEY_MOD_SHIFT)
+        start_mouse_action(MOUSE_ACTION_MOVE_CAM);
+      else
+        start_mouse_action(MOUSE_ACTION_ROTATE_CAM);
+      break;
+    }
     return;
   }
 }
@@ -496,10 +599,12 @@ void editor_handle_key(int key, int press, int mods)
                    completions, sizeof(completions)/sizeof(*completions));
       editor.input.line_len = strlen(editor.input.line);
     } else {
-      if (editor.selected_room)
-        editor.selected_room = editor.selected_room->next;
-      if (! editor.selected_room)
-        editor.selected_room = editor.room_list;
+      struct EDITOR_ROOM *sel = editor.selected_room;
+      if (sel)
+        sel = editor.selected_room->next;
+      if (! sel)
+        sel = editor.room_list;
+      select_room(sel);
     }
     break;
     
@@ -519,6 +624,11 @@ void editor_handle_key(int key, int press, int mods)
   case 'G':
     if (! editor.input.active && mods == 0 && editor.selected_room)
       start_mouse_action(MOUSE_ACTION_MOVE_ROOM);
+    break;
+
+  case 'N':
+    if (! editor.input.active && mods == 0 && editor.selected_room)
+      start_mouse_action(MOUSE_ACTION_SEL_NEIGHBOR);
     break;
     
   case 'X':
@@ -574,7 +684,7 @@ static struct EDITOR_ROOM *add_room(const char *name)
 static void delete_room(struct EDITOR_ROOM *room)
 {
   if (editor.selected_room == room)
-    editor.selected_room = NULL;
+    select_room(NULL);
   
   // remove room from everyone's neighbor list
   for (struct EDITOR_ROOM *p = editor.room_list; p != NULL; p = p->next) {
@@ -610,7 +720,7 @@ static void cmd_sel(const char *line, int argc, char **argv)
   
   struct EDITOR_ROOM *room = get_room_by_name(name);
   if (room) {
-    editor.selected_room = room;
+    select_room(room);
     out_text("- selected room '%s'\n", room->name);
     return;
   }
@@ -636,7 +746,7 @@ static void cmd_add(const char *line, int argc, char **argv)
   struct EDITOR_ROOM *room = add_room(name);
   if (room) {
     vec3_copy(room->pos, editor.camera.center);
-    editor.selected_room = room;
+    select_room(room);
     out_text("- added room '%s'\n", name);
   }
 }

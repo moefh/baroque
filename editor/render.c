@@ -25,7 +25,7 @@ struct GFX_SHADER {
   GLint uni_mat_model_view_projection;
   GLint uni_mat_normal;
   GLint uni_mat_model;
-  GLint uni_alpha;
+  GLint uni_color;
 };
 
 struct GFX_FONT_SHADER {
@@ -73,7 +73,7 @@ static int load_shader(void)
   get_shader_uniform_id(shader.id, &shader.uni_mat_model_view_projection, "mat_model_view_projection");
   get_shader_uniform_id(shader.id, &shader.uni_mat_model, "mat_model");
   get_shader_uniform_id(shader.id, &shader.uni_mat_normal, "mat_normal");
-  get_shader_uniform_id(shader.id, &shader.uni_alpha, "alpha");
+  get_shader_uniform_id(shader.id, &shader.uni_color, "color");
 
   // font
   font_shader.id = load_program_shader("data/font_vert.glsl", "data/font_frag.glsl");
@@ -169,15 +169,12 @@ void render_set_viewport(int width, int height)
 static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view)
 {
   float mat_model[16];
-  float alpha;
+  float color[4];
   switch (mesh->type) {
   case GFX_MESH_TYPE_ROOM:
     {
       struct EDITOR_ROOM *room = mesh->data;
-      if (room == editor.selected_room)
-        alpha = 0.75;
-      else
-        alpha = 0.25;
+      vec4_copy(color, room->display_color);
       
       mat4_copy(mat_model, mesh->matrix);
       mat_model[3]  += room->pos[0];
@@ -203,8 +200,8 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
     GL_CHECK(glUniformMatrix4fv(shader.uni_mat_normal, 1, GL_TRUE, mat_normal));
   if (shader.uni_mat_model >= 0)
     GL_CHECK(glUniformMatrix4fv(shader.uni_mat_model, 1, GL_TRUE, mat_model));
-  if (shader.uni_alpha >= 0)
-    GL_CHECK(glUniform1f(shader.uni_alpha, alpha));
+  if (shader.uni_color >= 0)
+    GL_CHECK(glUniform4fv(shader.uni_color, 1, color));
   
   if (mesh->texture) {
     GL_CHECK(glActiveTexture(GL_TEXTURE0));
@@ -336,14 +333,19 @@ void render_screen(void)
   //glDisable(GL_DEPTH_TEST);
   GL_CHECK(glUseProgram(font_shader.id));
   GL_CHECK(glUniform1i(font_shader.uni_tex1, 0));
-  set_text_color(1, 1, 1, 1);
   if (editor.selected_room) {
+    struct EDITOR_ROOM *room = editor.selected_room;
+    set_text_color(1, 1, 1, 1);
     render_format(0, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f) %s",
-                  editor.selected_room->pos[0],
-                  editor.selected_room->pos[1],
-                  editor.selected_room->pos[2],
-                  editor.selected_room->name);
+                  room->pos[0],
+                  room->pos[1],
+                  room->pos[2],
+                  room->name);
+    set_text_color(0.5, 0.5, 1, 1);
+    for (int i = 0; i < room->n_neighbors; i++)
+      render_format(0, 1+i, 0.75, "+ %s", room->neighbors[i]->name);
   }
+  set_text_color(1, 1, 1, 0.75);
   render_format(110, 0, 0.75, "view (%+7.2f,%+7.2f,%+7.2f)",
                 editor.camera.center[0],
                 editor.camera.center[1],

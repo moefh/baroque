@@ -64,6 +64,14 @@ static inline void vec4_load(float *v, float x, float y, float z, float w)
   v[3] = w;
 }
 
+static inline void vec4_copy(float *restrict dest, const float *restrict src)
+{
+  dest[0] = src[0];
+  dest[1] = src[1];
+  dest[2] = src[2];
+  dest[3] = src[3];
+}
+
 // vec3:
 void vec3_load_spherical(float *v, float r, float theta, float phi);
 void vec3_cross(float *restrict ret, const float *restrict a, const float *restrict b);

@@ -69,6 +69,7 @@ struct EDITOR_ROOM {
   int id;
   char name[EDITOR_ROOM_NAME_LEN];
   float pos[3];
+  float display_color[4];
   
   int n_tiles_x;
   int n_tiles_y;

@@ -8,7 +8,7 @@ in vec2 frag_uv;
 
 uniform vec3 light_pos;
 uniform vec3 camera_pos;
-uniform float alpha;
+uniform vec4 color;
 uniform sampler2D tex1;
 
 void main()
@@ -27,6 +27,7 @@ void main()
   float specular = 0.8 * pow(max(dot(camera_dir, reflect_dir), 0.0), 32);
 
   vec4 tex_rgba = texture(tex1, frag_uv);
-  
-  frag = vec4(clamp(ambient + diffuse + specular, 0.0, 1.0) * tex_rgba.rgb, tex_rgba.a * alpha);
+  tex_rgba.rgb = 0.75 + 0.25 * tex_rgba.rgb;
+
+  frag = color * vec4(clamp(ambient + diffuse + specular, 0.0, 1.0) * tex_rgba.rgb, tex_rgba.a);
 }
