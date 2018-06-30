@@ -43,8 +43,10 @@ struct GFX_GRID_SHADER {
   GLint uni_mat_model_view_projection;
 };
 
-static float projection_aspect = 1.0;
-static float projection_fov = 75*M_PI/180;
+float projection_aspect = 1.0;
+float projection_fovy = 50*M_PI/180;
+int viewport_width;
+int viewport_height;
 
 static struct GFX_SHADER shader;
 static struct GFX_FONT_SHADER font_shader;
@@ -155,6 +157,8 @@ void render_set_viewport(int width, int height)
 {
   glViewport(0, 0, width, height);
   projection_aspect = (float) width / height;
+  viewport_width = width;
+  viewport_height = height;
 
   float text_base_size = 1.0 / 28.0;
   text_scale[0] = text_base_size * 0.5;
@@ -306,7 +310,7 @@ void render_screen(void)
   float light_pos[3] = { 10.0, 10.0, 0.0 };
   
   float mat_projection[16];
-  mat4_inf_perspective(mat_projection, projection_aspect, projection_fov, 0.1);
+  mat4_inf_perspective(mat_projection, projection_aspect, projection_fovy, 0.1);
 
   float mat_view[16];
   get_camera_matrix(&editor.camera, mat_view);
@@ -333,13 +337,13 @@ void render_screen(void)
   GL_CHECK(glUniform1i(font_shader.uni_tex1, 0));
   set_text_color(1, 1, 1, 1);
   if (editor.selected_room) {
-    render_format(0, 0, 1, "(%+7.2f,%+7.2f,%+7.2f) %s",
+    render_format(0, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f) %s",
                   editor.selected_room->pos[0],
                   editor.selected_room->pos[1],
                   editor.selected_room->pos[2],
                   editor.selected_room->name);
   }
-  render_format(80, 0, 1, "view (%+7.2f,%+7.2f,%+7.2f)",
+  render_format(110, 0, 0.75, "view (%+7.2f,%+7.2f,%+7.2f)",
                 editor.camera.center[0],
                 editor.camera.center[1],
                 editor.camera.center[2]);

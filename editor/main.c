@@ -48,6 +48,11 @@ static void cursor_pos_callback(GLFWwindow *window, double x, double y)
   editor_handle_cursor_pos(x, y);
 }
 
+static void mouse_scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+  editor_handle_mouse_scroll(xoffset, yoffset);
+}
+
 static int init_gfx()
 {
   debug("- Initializing GLFW...\n");
@@ -75,6 +80,7 @@ static int init_gfx()
   glfwSetCharCallback(window, char_callback);
   glfwSetMouseButtonCallback(window, mouse_btn_callback);
   glfwSetCursorPosCallback(window, cursor_pos_callback);
+  glfwSetScrollCallback(window, mouse_scroll_callback);
   //glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
   glfwSwapInterval(1);
 
@@ -102,7 +108,7 @@ int main(void)
     goto err;
 
   int width, height;
-  glfwGetWindowSize(window, &width, &height);
+  glfwGetFramebufferSize(window, &width, &height);
   if (render_setup(width, height) != 0)
     goto err;
   init_editor();

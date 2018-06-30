@@ -50,6 +50,7 @@
 void init_editor(void);
 void editor_handle_cursor_pos(double x, double y);
 void editor_handle_mouse_button(int button, int press, int mods);
+void editor_handle_mouse_scroll(double x, double y);
 void editor_handle_key(int key, int press, int mods);
 void editor_handle_char(unsigned int codepoint);
 int process_editor_step(void);

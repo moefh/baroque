@@ -658,3 +658,18 @@ void vec3_cross(float *restrict ret, const float *restrict a, const float *restr
   ret[1] = a[2]*b[0] - a[0]*b[2];
   ret[2] = a[0]*b[1] - a[1]*b[0];
 }
+
+void vec3_rotate_about_axis(float *restrict ret, const float *restrict v, const float *restrict axis, float angle)
+{
+  double c = cos(angle);
+  double s = sin(angle);
+
+  float a[3];
+  vec3_copy(a, axis);
+  vec3_normalize(a);
+  
+  ret[0] = v[0] * (c + a[0]*a[0] * (1-c))        +   v[1] * (a[0]*a[1] * (1-c) - a[2]*s)    +   v[2] * (a[0]*a[2] * (1-c) + a[1]*s);
+  ret[1] = v[0] * (a[1]*a[0] * (1-c) + a[2]*s)   +   v[1] * (c + a[1]*a[1] * (1-c))         +   v[2] * (a[1]*a[2] * (1-c) - a[0]*s);
+  ret[2] = v[0] * (a[2]*a[0] * (1-c) - a[1]*s)   +   v[1] * (a[2]*a[1] * (1-c) + a[0]*s)    +   v[2] * (c + a[2]*a[2] * (1-c));
+}
+

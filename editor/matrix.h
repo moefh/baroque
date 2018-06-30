@@ -67,6 +67,7 @@ static inline void vec4_load(float *v, float x, float y, float z, float w)
 // vec3:
 void vec3_load_spherical(float *v, float r, float theta, float phi);
 void vec3_cross(float *restrict ret, const float *restrict a, const float *restrict b);
+void vec3_rotate_about_axis(float *restrict ret, const float *restrict vec, const float *restrict axis, float angle);
 
 static inline void vec3_load(float *v, float x, float y, float z)
 {

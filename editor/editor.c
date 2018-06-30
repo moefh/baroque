@@ -12,6 +12,7 @@
 #include "matrix.h"
 #include "model.h"
 #include "gfx.h"
+#include "render.h"
 
 #define MAX_COMMAND_ARGS  32
 #define MAX_COMMAND_LEN   128
@@ -234,6 +235,7 @@ void init_editor(void)
   editor.next_room_id = 0;
   
   init_camera(&editor.camera);
+  editor.camera.distance = 25;
   editor.input.active = 0;
 
   vec4_load(editor.grid_color, 0.4, 0.4, 0.4, 1);
@@ -242,6 +244,13 @@ void init_editor(void)
   memset(screen.text, 0, sizeof(screen.text));
   for (int i = 0; i < EDITOR_SCREEN_LINES; i++)
     editor.text_screen[i] = &screen.text[i*EDITOR_SCREEN_COLS];
+}
+
+void editor_handle_mouse_scroll(double x_off, double y_off)
+{
+  float zoom = 1.0 - y_off/20.0;
+  editor.camera.distance *= zoom;
+  editor.camera.distance = clamp(editor.camera.distance, 3.0, 100.0);
 }
 
 void editor_handle_cursor_pos(double x, double y)
@@ -321,6 +330,11 @@ static void start_mouse_action(int action_id)
     vec3_load(action.room_pos, 0, 0, 0);
 }
 
+static void end_mouse_action(void)
+{
+  action.action_id = MOUSE_ACTION_NONE;
+}
+
 void editor_handle_mouse_button(int button, int press, int mods)
 {
   //console("mouse button %d %s, mods=%x\n", button, (press) ? "pressed" : "released", mods);
@@ -330,34 +344,31 @@ void editor_handle_mouse_button(int button, int press, int mods)
       return;
 
     if (action.action_id == MOUSE_ACTION_MOVE_ROOM)
-      action.action_id = MOUSE_ACTION_NONE;
+      end_mouse_action();
     return;
   }
 
   if (button == 1) {
-    if (! press || action.action_id != MOUSE_ACTION_NONE)
+    if (! press)
       return;
-    // TODO: calculate (pos, vec) for mouse
-    float pos[3];
-    get_camera_pos(&editor.camera, pos);
-    float vec[3] = {
-      pos[0] - editor.camera.center[0],
-      pos[1] - editor.camera.center[1],
-      pos[2] - editor.camera.center[2],
-    };
-    if (fabs(vec[1]) < 0.001)
+    if (action.action_id == MOUSE_ACTION_MOVE_ROOM) {
+      vec3_copy(editor.selected_room->pos, action.room_pos);
+      end_mouse_action();
       return;
+    }
     
-    // click = intersection of line (vec+pos) with plane y=0
+    float pos[3], vec[3];
+    get_screen_ray(&editor.camera, pos, vec, projection_fovy, action.mouse_x, action.mouse_y, viewport_width, viewport_height);
+    
+    // calculate click = intersection of line (vec+pos) with plane y=0
     float alpha = -pos[1] / vec[1];
-    out_text("alpha = %f\n", alpha);
-    out_text("cam_pos = (%+f,%+f,%+f)\n", pos[0], pos[1], pos[2]);
     float click[3] = {
       alpha*vec[0] + pos[0],
       alpha*vec[1] + pos[1],
       alpha*vec[2] + pos[2],
     };
-    out_text("click (%+f,%+f,%+f)\n", click[0], click[1], click[2]);
+
+    // select room with center closest to click
     float sel_dist = 0;
     struct EDITOR_ROOM *sel = NULL;
     for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
@@ -367,7 +378,6 @@ void editor_handle_mouse_button(int button, int press, int mods)
       if (sel == NULL || sel_dist > dist) {
         sel = room;
         sel_dist = dist;
-        out_text("selecting %s dist=%f\n", sel->name, sel_dist);
       }
     }
     if (sel)
@@ -378,7 +388,7 @@ void editor_handle_mouse_button(int button, int press, int mods)
   if (button == 2) {
     if (! press) {
       if (action.action_id == MOUSE_ACTION_MOVE_CAM || action.action_id == MOUSE_ACTION_ROTATE_CAM)
-        action.action_id = MOUSE_ACTION_NONE;
+        end_mouse_action();
       return;
     }
     if (action.action_id != MOUSE_ACTION_NONE)
@@ -490,8 +500,6 @@ void editor_handle_key(int key, int press, int mods)
         editor.selected_room = editor.selected_room->next;
       if (! editor.selected_room)
         editor.selected_room = editor.room_list;
-      if (editor.selected_room)
-        out_text("Selected room '%s'\n", editor.selected_room->name);
     }
     break;
     
@@ -500,6 +508,7 @@ void editor_handle_key(int key, int press, int mods)
       run_command_line(input->line);
       input->active = 0;
     } else {
+      end_mouse_action();
       input->line[0] = '\0';
       input->line_len = 0;
       input->cursor_pos = 0;
@@ -523,8 +532,8 @@ void editor_handle_key(int key, int press, int mods)
     break;
 
   default:
-    if (! editor.input.active)
-      out_text("key: %d (%c)\n", key, (key >= 32 && key < 127) ? key : '-');
+    //if (! editor.input.active)
+    //  out_text("key: %d (%c)\n", key, (key >= 32 && key < 127) ? key : '-');
     break;
   }
 }
@@ -601,7 +610,7 @@ static void cmd_sel(const char *line, int argc, char **argv)
   struct EDITOR_ROOM *room = get_room_by_name(name);
   if (room) {
     editor.selected_room = room;
-    out_text("Selected room '%s'\n", room->name);
+    out_text("- selected room '%s'\n", room->name);
     return;
   }
 
@@ -616,11 +625,18 @@ static void cmd_add(const char *line, int argc, char **argv)
   }
   const char *name = argv[1];
 
-  //console("*** adding room\n");
+  for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
+    if (strcmp(room->name, name) == 0) {
+      out_text("** ERROR: room '%s' already exists\n", name);
+      return;
+    }
+  }
+  
   struct EDITOR_ROOM *room = add_room(name);
   if (room) {
     vec3_copy(room->pos, editor.camera.center);
     editor.selected_room = room;
+    out_text("- added room '%s'\n", name);
   }
 }
 
@@ -630,16 +646,27 @@ static void cmd_remove(const char *line, int argc, char **argv)
     out_text("** USAGE: remove name\n");
     return;
   }
-  const char *del_name = argv[1];
+  char name[EDITOR_ROOM_NAME_LEN];
+  strncpy(name, argv[1], sizeof(name));
+  name[sizeof(name)-1] = '\0';
 
-  //console("*** deleting room\n");
-  struct EDITOR_ROOM *room = get_room_by_name(del_name);
+  if (strcmp(name, ".") == 0) {
+    if (! editor.selected_room) {
+      out_text("** ERROR: no room selected\n");
+      return;
+    }
+    strncpy(name, editor.selected_room->name, sizeof(name));
+    name[sizeof(name)-1] = '\0';
+  }
+  
+  struct EDITOR_ROOM *room = get_room_by_name(name);
   if (! room) {
-    out_text("** ERROR: room '%s' not found\n", del_name);
+    out_text("** ERROR: room '%s' not found\n", name);
     return;
   }
 
   delete_room(room);
+  out_text("- removed room '%s'\n", name);
 }
 
 static void cmd_ls(const char *line, int argc, char **argv)
@@ -652,6 +679,13 @@ static void cmd_ls(const char *line, int argc, char **argv)
   out_text("%d rooms\n", n_rooms);
 }
 
+static void cmd_info(const char *line, int argc, char **argv)
+{
+  out_text("camera:\n");
+  out_text("  theta=%f, phi=%f, dist=%f\n", editor.camera.theta, editor.camera.phi, editor.camera.distance);
+  out_text("  center=(%+f,%+f,%+f)\n", editor.camera.center[0], editor.camera.center[1], editor.camera.center[2]);
+}
+
 static struct EDITOR_COMMAND commands[] = {
   { "quit", cmd_quit },
   { "exit", cmd_quit },
@@ -660,5 +694,6 @@ static struct EDITOR_COMMAND commands[] = {
   { "add", cmd_add },
   { "remove", cmd_remove },
   { "ls", cmd_ls },
+  { "info", cmd_info },
   { NULL }
 };
