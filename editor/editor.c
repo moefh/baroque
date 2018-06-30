@@ -567,6 +567,7 @@ static struct EDITOR_ROOM *add_room(const char *name)
     return NULL;
   }
 
+  free_model(&model);
   return room;
 }
 
