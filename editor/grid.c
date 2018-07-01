@@ -58,10 +58,10 @@ void free_grid(struct MODEL_MESH *mesh)
 
 static float grid_tile_vtx_data[] = {
   // pos           uv
-  -0.5, 0, -0.5,   0, 0,
-  +0.5, 0, -0.5,   1, 0,
-  -0.5, 0, +0.5,   0, 1,
   +0.5, 0, +0.5,   1, 1,
+  -0.5, 0, +0.5,   0, 1,
+  +0.5, 0, -0.5,   1, 0,
+  -0.5, 0, -0.5,   0, 0,
 };
 
 static struct MODEL_MESH *make_grid_tiles_mesh(void)
