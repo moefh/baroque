@@ -64,12 +64,16 @@ void out_text(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 #define EDITOR_ROOM_NAME_LEN      32
 #define EDITOR_ROOM_MAX_NEIGHBORS 16
 
+struct EDITOR_ROOM_DISPLAY_INFO {
+  float color[4];
+  int tiles_changed;
+};
+
 struct EDITOR_ROOM {
   struct EDITOR_ROOM *next;
   int id;
   char name[EDITOR_ROOM_NAME_LEN];
   float pos[3];
-  float display_color[4];
   
   int n_tiles_x;
   int n_tiles_y;
@@ -77,6 +81,8 @@ struct EDITOR_ROOM {
   
   int n_neighbors;
   struct EDITOR_ROOM *neighbors[EDITOR_ROOM_MAX_NEIGHBORS];
+
+  struct EDITOR_ROOM_DISPLAY_INFO display;
 };
 
 struct EDITOR_INPUT_LINE {

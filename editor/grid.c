@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "grid.h"
 #include "debug.h"
@@ -53,4 +54,85 @@ struct MODEL_MESH *make_grid(int num, float size)
 void free_grid(struct MODEL_MESH *mesh)
 {
   free(mesh);
+}
+
+static float grid_tile_vtx_data[] = {
+  // pos           uv
+  -0.5, 0, -0.5,   0, 0,
+  +0.5, 0, -0.5,   1, 0,
+  -0.5, 0, +0.5,   0, 1,
+  +0.5, 0, +0.5,   1, 1,
+};
+
+static struct MODEL_MESH *make_grid_tiles_mesh(void)
+{
+  int n_vtx = 4;
+  size_t vtx_size = n_vtx * (3+2) * sizeof(float);
+
+  int n_ind = 6;
+  size_t ind_size = n_ind * sizeof(unsigned char);
+
+  struct MODEL_MESH *mesh = new_model_mesh(MODEL_MESH_VTX_POS_UV1, vtx_size, MODEL_MESH_IND_U8, ind_size, n_ind);
+  if (! mesh)
+    return NULL;
+  mat4_id(mesh->matrix);
+
+  memcpy(mesh->vtx, grid_tile_vtx_data, sizeof(grid_tile_vtx_data));
+  
+  unsigned char *ind = mesh->ind;
+  ind[0] = 0;
+  ind[1] = 2;
+  ind[2] = 1;
+  ind[3] = 1;
+  ind[4] = 2;
+  ind[5] = 3;
+
+  return mesh;
+}
+
+static void init_grid_tiles(struct GRID_TILES *tiles)
+{
+  tiles->mesh = NULL;
+  tiles->texture.data = NULL;
+}
+
+void set_tile(unsigned char *data, int x, int y, uint32_t color)
+{
+  data[4*(256*y + x) + 0] = (color>>24) & 0xff;
+  data[4*(256*y + x) + 1] = (color>>16) & 0xff;
+  data[4*(256*y + x) + 2] = (color>> 8) & 0xff;
+  data[4*(256*y + x) + 3] = (color>> 0) & 0xff;
+}
+
+int make_grid_tiles(struct GRID_TILES *tiles, int width, int height)
+{
+  init_grid_tiles(tiles);
+  
+  tiles->texture.data = calloc(width * height, 4);
+  if (! tiles->texture.data)
+    goto err;
+  tiles->texture.width = width;
+  tiles->texture.height = height;
+  tiles->texture.n_chan = 4;
+
+  tiles->mesh = make_grid_tiles_mesh();
+  if (! tiles->mesh)
+    goto err;
+  //memset(tiles->texture.data, 0xff, width * height * 4);
+  set_tile(tiles->texture.data, 128, 128, 0xffffffff);
+  set_tile(tiles->texture.data, 128+20, 128-21, 0xff0000ff);
+  set_tile(tiles->texture.data, 128+20, 128+00, 0x00ff00ff);
+  set_tile(tiles->texture.data, 128+20, 128+01, 0x0000ffff);
+  set_tile(tiles->texture.data, 128+20, 128+20, 0xffff00ff);
+  return 0;
+
+ err:
+  free_grid_tiles(tiles);
+  return 1;
+}
+
+void free_grid_tiles(struct GRID_TILES *tiles)
+{
+  free(tiles->texture.data);
+  free(tiles->mesh);
 }

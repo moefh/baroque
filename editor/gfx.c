@@ -1,6 +1,7 @@
 /* gfx.c */
 
 #include <math.h>
+#include <stdbool.h>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -10,6 +11,7 @@
 #include "matrix.h"
 #include "model.h"
 #include "font.h"
+#include "grid.h"
 
 int num_gfx_meshes;
 int num_gfx_textures;
@@ -23,6 +25,20 @@ void gfx_free_texture(struct GFX_TEXTURE *tex)
   tex->use_count = 0;
 }
 
+void gfx_free_mesh(struct GFX_MESH *gfx)
+{
+  gfx->use_count = 0;
+  GL_CHECK(glDeleteVertexArrays(1, &gfx->vtx_array_obj));
+  GL_CHECK(glDeleteBuffers(1, &gfx->vtx_buf_obj));
+  GL_CHECK(glDeleteBuffers(1, &gfx->index_buf_obj));
+
+  if (gfx->texture) {
+    gfx->texture->use_count--;
+    if (gfx->texture->use_count == 0)
+      gfx_free_texture(gfx->texture);
+  }
+}
+
 int gfx_free_meshes(uint32_t type, uint32_t info)
 {
   //console("-> freeing all meshes with type=%u, info=%u\n", type, info);
@@ -32,16 +48,7 @@ int gfx_free_meshes(uint32_t type, uint32_t info)
     if (gfx->use_count != 0 && gfx->type == type && gfx->info == info) {
       //console("-> freeing mesh %d\n", i);
       n_released_meshes++;
-      gfx->use_count = 0;
-      GL_CHECK(glDeleteVertexArrays(1, &gfx->vtx_array_obj));
-      GL_CHECK(glDeleteBuffers(1, &gfx->vtx_buf_obj));
-      GL_CHECK(glDeleteBuffers(1, &gfx->index_buf_obj));
-
-      if (gfx->texture) {
-        gfx->texture->use_count--;
-        if (gfx->texture->use_count == 0)
-          gfx_free_texture(gfx->texture);
-      }
+      gfx_free_mesh(gfx);
     }
   }
 
@@ -68,6 +75,7 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
   gfx->type = type;
   gfx->info = info;
   gfx->data = data;
+  gfx->texture = NULL;
   
   GL_CHECK(glGenVertexArrays(1, &gfx->vtx_array_obj));
   GL_CHECK(glBindVertexArray(gfx->vtx_array_obj));
@@ -143,7 +151,16 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
   return gfx;
 }
 
-struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture)
+void gfx_update_texture(struct GFX_TEXTURE *gfx, int xoff, int yoff, int width, int height, void *data, int n_chan)
+{
+  GL_CHECK(glBindTexture(GL_TEXTURE_2D, gfx->id));
+  if (n_chan == 3)
+    GL_CHECK(glTexSubImage2D(GL_TEXTURE_2D, 0, xoff, yoff, width, height, GL_RGB,  GL_UNSIGNED_BYTE, data));
+  else
+    GL_CHECK(glTexSubImage2D(GL_TEXTURE_2D, 0, xoff, yoff, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data));
+}
+
+struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture, unsigned int flags)
 {
   struct GFX_TEXTURE *gfx = NULL;
   for (int i = 0; i < num_gfx_textures; i++) {
@@ -163,18 +180,29 @@ struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture)
   //console("-> uploading texture id %d\n", gfx->id);
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, gfx->id));
 
-  GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
-  GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
+  if (flags & GFX_TEX_FLAG_NO_REPEAT) {
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+  } else {
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
+  }
 
-  GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
-  GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+  if (flags & GFX_TEX_FLAG_NO_FILTER) {
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+  } else {
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (flags & GFX_TEX_FLAG_NO_MIPMAP) ? GL_LINEAR : GL_LINEAR_MIPMAP_LINEAR));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+  }
 
   if (texture->n_chan == 3)
     GL_CHECK(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,  texture->width, texture->height, 0, GL_RGB,  GL_UNSIGNED_BYTE, texture->data));
   else
     GL_CHECK(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture->data));
-  
-  GL_CHECK(glGenerateMipmap(GL_TEXTURE_2D));
+
+  if ((flags & GFX_TEX_FLAG_NO_MIPMAP) == 0)
+    GL_CHECK(glGenerateMipmap(GL_TEXTURE_2D));
 
   return gfx;
 }
@@ -196,7 +224,7 @@ int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *da
     if (tex_num != MODEL_TEXTURE_NONE) {
       struct GFX_TEXTURE *tex = gfx_textures[tex_num];
       if (! tex) {
-        tex = gfx_upload_model_texture(&model->textures[tex_num]);
+        tex = gfx_upload_model_texture(&model->textures[tex_num], 0);
         if (! tex) {
           console("** ERROR: can't upload texture\n");
           return 1;
@@ -218,9 +246,24 @@ struct GFX_MESH *gfx_upload_font(struct FONT *font)
   if (! mesh)
     return NULL;
   
-  struct GFX_TEXTURE *tex = gfx_upload_model_texture(&font->texture);
-  if (! tex)
+  mesh->texture  = gfx_upload_model_texture(&font->texture, 0);
+  if (! mesh->texture) {
+    gfx_free_mesh(mesh);
     return NULL;
-  mesh->texture = tex;
+  }
+  return mesh;
+}
+
+struct GFX_MESH *gfx_upload_grid_tiles(struct GRID_TILES *tiles)
+{
+  struct GFX_MESH *mesh = gfx_upload_model_mesh(tiles->mesh, GFX_MESH_TYPE_FONT, 0, NULL);
+  if (! mesh)
+    return NULL;
+  
+  mesh->texture = gfx_upload_model_texture(&tiles->texture, GFX_TEX_FLAG_NO_MIPMAP|GFX_TEX_FLAG_NO_FILTER|GFX_TEX_FLAG_NO_REPEAT);
+  if (! mesh->texture) {
+    gfx_free_mesh(mesh);
+    return NULL;
+  }
   return mesh;
 }

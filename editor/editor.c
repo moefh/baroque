@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdarg.h>
 
 #include "editor.h"
@@ -14,8 +15,8 @@
 #include "gfx.h"
 #include "render.h"
 
-#define MAX_COMMAND_ARGS  32
-#define MAX_COMMAND_LEN   128
+#define MAX_COMMAND_ARGS   32
+#define INPUT_HISTORY_SIZE 64
 
 #define MOUSE_BUTTON_LEFT   0
 #define MOUSE_BUTTON_RIGHT  1
@@ -56,6 +57,7 @@ struct MOUSE_ACTION {
   float room_pos[3];
   struct EDITOR_ROOM *hover_room;
   float hover_room_save_color[4];
+  uint16_t paint_tiles_mark;
 };
 
 struct EDITOR editor;
@@ -71,8 +73,14 @@ static struct TEXT_SCREEN screen;
 static struct {
   int argc;
   char *argv[MAX_COMMAND_ARGS];
-  char text[MAX_COMMAND_LEN];
+  char text[EDITOR_MAX_INPUT_LINE_LEN];
 } cmdline;
+static struct {
+  char lines[INPUT_HISTORY_SIZE][EDITOR_MAX_INPUT_LINE_LEN];
+  int last;
+  int size;
+  int last_view;
+} input_history;
 
 static struct EDITOR_ROOM *new_room(const char *name)
 {
@@ -90,8 +98,11 @@ static struct EDITOR_ROOM *new_room(const char *name)
   room->n_tiles_x = 0;
   room->n_tiles_y = 0;
   vec3_load(room->pos, 0, 0, 0);
-  vec4_load(room->display_color, 1,1,1,1);
-
+  memset(room->tiles, 0, sizeof(room->tiles));
+  //room->tiles[128+19-room->id][128+20] = 1;
+  
+  vec4_load(room->display.color, 1, 1, 1, 1);
+  room->display.tiles_changed = 1;
   return room;
 }
 
@@ -111,19 +122,19 @@ static int free_room(struct EDITOR_ROOM *room)
 static void set_room_neighbor_color(struct EDITOR_ROOM *room, const float *color)
 {
   for (int i = 0; i < room->n_neighbors; i++)
-    vec4_copy(room->neighbors[i]->display_color, color);
+    vec4_copy(room->neighbors[i]->display.color, color);
 }
 
 static void select_room(struct EDITOR_ROOM *room)
 {
   if (editor.selected_room && editor.selected_room != room) {
-    vec4_copy(editor.selected_room->display_color, room_normal_color);
+    vec4_copy(editor.selected_room->display.color, room_normal_color);
     set_room_neighbor_color(editor.selected_room, room_normal_color);
   }
   
   editor.selected_room = room;
   if (room) {
-    vec4_copy(room->display_color, room_selected_color);
+    vec4_copy(room->display.color, room_selected_color);
     set_room_neighbor_color(room, room_neighbor_color);
   }
 }
@@ -187,6 +198,89 @@ static struct EDITOR_ROOM *get_room_at_screen_pos(int screen_x, int screen_y)
   return sel;
 }
 
+static void start_text_input(void)
+{
+  struct EDITOR_INPUT_LINE *input = &editor.input;
+  input->line[0] = '\0';
+  input->line_len = 0;
+  input->cursor_pos = 0;
+  input->active = 1;
+}
+
+static void start_mouse_action(int action_id)
+{
+  action.action_id = action_id;
+  action.start_x = action.mouse_x;
+  action.start_y = action.mouse_y;
+  action.camera = editor.camera;
+  action.hover_room = NULL;
+  if (editor.selected_room)
+    vec3_copy(action.room_pos, editor.selected_room->pos);
+  else
+    vec3_load(action.room_pos, 0, 0, 0);
+}
+
+static void end_mouse_action(void)
+{
+  if (action.action_id == MOUSE_ACTION_SEL_NEIGHBOR && action.hover_room) {
+    vec4_copy(action.hover_room->display.color, action.hover_room_save_color);
+    select_room(editor.selected_room);
+  }
+
+  action.action_id = MOUSE_ACTION_NONE;
+}
+
+static void paint_tile_at_screen_pos(int screen_x, int screen_y, uint16_t mark)
+{
+  struct EDITOR_ROOM *room = editor.selected_room;
+  if (! room)
+    return;
+  
+  float pos[3], vec[3];
+  get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
+  
+  // calculate click = intersection of line (vec+pos) with plane y=0
+  // TODO: intersect with plane y=room->pos[1] instead
+  float alpha = -pos[1] / vec[1];
+  float click[3] = {
+    alpha*vec[0] + pos[0],
+    alpha*vec[1] + pos[1],
+    alpha*vec[2] + pos[2],
+  };
+  
+  int tile_x = 128 + 4 * (click[0] - room->pos[0]);
+  int tile_y = 128 + 4 * (click[2] - room->pos[2]);
+  if (tile_x < 0 || tile_x >= 256 || tile_y < 0 || tile_y >= 256)
+    return;
+  room->tiles[tile_y][tile_x] = mark;
+  room->display.tiles_changed = 1;
+}
+
+static int parse_int(const char *str, int *p_num)
+{
+  char *end;
+  errno = 0;
+  long n = strtol(str, &end, 0);
+  if (errno != 0)
+    return 1;
+  if (n > INT_MAX || n < INT_MIN)
+    return 1;
+  *p_num = (int) n;
+  return 0;
+}
+
+static void add_input_history(const char *line)
+{
+  int next = (input_history.last + 1) % INPUT_HISTORY_SIZE;
+  strncpy(input_history.lines[next], line, EDITOR_MAX_INPUT_LINE_LEN);
+  input_history.lines[next][EDITOR_MAX_INPUT_LINE_LEN-1] = '\0';
+
+  if (input_history.size < INPUT_HISTORY_SIZE)
+    input_history.size = next + 1;
+  input_history.last = next;
+  input_history.last_view = next;
+}
+
 static int parse_command_line(const char *command)
 {
   const char *in = command;
@@ -218,6 +312,7 @@ static void run_command_line(const char *command)
   if (cmdline.argc == 0)
     return;
 
+  add_input_history(command);
   out_text("> %s\n", command);
   for (int i = 0; commands[i].name != NULL; i++) {
     if (strcmp(commands[i].name, cmdline.argv[0]) == 0) {
@@ -334,6 +429,10 @@ void init_editor(void)
   for (int i = 0; i < EDITOR_SCREEN_LINES; i++)
     editor.text_screen[i] = &screen.text[i*EDITOR_SCREEN_COLS];
 
+  input_history.last = -1;
+  input_history.size = 0;
+  input_history.last_view = 0;
+  
   out_text("Type /help to get help\n");
 }
 
@@ -421,46 +520,14 @@ void editor_handle_cursor_pos(double x, double y)
     struct EDITOR_ROOM *sel = get_room_at_screen_pos(action.mouse_x, action.mouse_y);
     if (sel != action.hover_room) {
       if (action.hover_room)
-        vec4_copy(action.hover_room->display_color, action.hover_room_save_color);
+        vec4_copy(action.hover_room->display.color, action.hover_room_save_color);
       if (sel) {
-        vec4_copy(action.hover_room_save_color, sel->display_color);
-        vec4_copy(sel->display_color, room_hover_color);
+        vec4_copy(action.hover_room_save_color, sel->display.color);
+        vec4_copy(sel->display.color, room_hover_color);
         action.hover_room = sel;
       }
     }
   }
-}
-
-static void start_text_input(void)
-{
-  struct EDITOR_INPUT_LINE *input = &editor.input;
-  input->line[0] = '\0';
-  input->line_len = 0;
-  input->cursor_pos = 0;
-  input->active = 1;
-}
-
-static void start_mouse_action(int action_id)
-{
-  action.action_id = action_id;
-  action.start_x = action.mouse_x;
-  action.start_y = action.mouse_y;
-  action.camera = editor.camera;
-  action.hover_room = NULL;
-  if (editor.selected_room)
-    vec3_copy(action.room_pos, editor.selected_room->pos);
-  else
-    vec3_load(action.room_pos, 0, 0, 0);
-}
-
-static void end_mouse_action(void)
-{
-  if (action.action_id == MOUSE_ACTION_SEL_NEIGHBOR && action.hover_room) {
-    vec4_copy(action.hover_room->display_color, action.hover_room_save_color);
-    select_room(editor.selected_room);
-  }
-
-  action.action_id = MOUSE_ACTION_NONE;
 }
 
 void editor_handle_mouse_button(int button, int press, int mods)
@@ -485,7 +552,7 @@ void editor_handle_mouse_button(int button, int press, int mods)
       }
       break;
     }
-    
+
     return;
   }
 
@@ -566,6 +633,24 @@ void editor_handle_key(int key, int press, int mods)
     if (! editor.input.active && editor.selected_room) {
       vec3_copy(editor.camera.center, editor.selected_room->pos);
       vec3_copy(editor.grid_pos, editor.camera.center);
+    }
+    break;
+
+  case KEY_UP:
+    if (editor.input.active && input_history.size > 0) {
+      strcpy(input->line, input_history.lines[input_history.last_view]);
+      input->line_len = strlen(input->line);
+      input->cursor_pos = input->line_len;
+      input_history.last_view = (input_history.last_view - 1 + input_history.size) % input_history.size;
+    }
+    break;
+    
+  case KEY_DOWN:
+    if (editor.input.active && input_history.size > 0) {
+      strcpy(input->line, input_history.lines[input_history.last_view]);
+      input->line_len = strlen(input->line);
+      input->cursor_pos = input->line_len;
+      input_history.last_view = (input_history.last_view + 1 + input_history.size) % input_history.size;
     }
     break;
     
@@ -679,6 +764,21 @@ void editor_handle_key(int key, int press, int mods)
       editor.quit = 1;
     break;
 
+  case '`':
+    if (! editor.input.active)
+      action.paint_tiles_mark = 0;
+    break;
+
+  case '1':
+    if (! editor.input.active)
+      action.paint_tiles_mark = 1;
+    break;
+    
+  case ' ':
+    if (! editor.input.active)
+      paint_tile_at_screen_pos(action.mouse_x, action.mouse_y, action.paint_tiles_mark);
+    break;
+    
   case 'L':
     if (mods & KEY_MOD_CTRL)
       clear_text_screen();
@@ -834,6 +934,69 @@ static void cmd_ls(const char *line, int argc, char **argv)
   out_text("%d rooms\n", n_rooms);
 }
 
+static void cmd_wipe(const char *line, int argc, char **argv)
+{
+  struct EDITOR_ROOM *room = editor.selected_room;
+  if (! room) {
+    out_text("** ERROR: no room selected\n");
+    return;
+  }
+
+  memset(room->tiles, 0, sizeof(room->tiles));
+  room->display.tiles_changed = 1;
+}
+
+static void cmd_fill(const char *line, int argc, char **argv)
+{
+  if (argc != 6) {
+    out_text("USAGE: fill VALUE X_FIRST Y_FIRST X_LAST Y_LAST\n");
+    return;
+  }
+
+  struct EDITOR_ROOM *room = editor.selected_room;
+  if (! room) {
+    out_text("** ERROR: no room selected\n");
+    return;
+  }
+  
+  int value, x_first, y_first, x_last, y_last;
+  if (parse_int(argv[1], &value) != 0 ||
+      parse_int(argv[2], &x_first) != 0 ||
+      parse_int(argv[3], &y_first) != 0 || 
+      parse_int(argv[4], &x_last) != 0 || 
+      parse_int(argv[5], &y_last) != 0) {
+    out_text("** ERROR: bad numbers\n");
+    return;
+  }
+
+  if (x_first > x_last || y_first > y_last) {
+    out_text("** ERROR: invalid range\n");
+    return;
+  }
+  
+  for (int y = y_first; y <= y_last; y++) {
+    for (int x = x_first; x <= x_last; x++) {
+      int tx = 128 + x;
+      int ty = 128 + y;
+      if (tx >= 0 && tx < 256 && ty >= 0 && ty < 256)
+        room->tiles[ty][tx] = value;
+    }
+  }
+  room->display.tiles_changed = 1;
+}
+
+static void cmd_history(const char *line, int argc, char **argv)
+{
+  if (input_history.last >= input_history.size)
+    return;
+  
+  int pos = input_history.last;
+  do {
+    pos = (pos + 1) % input_history.size;
+    out_text("%s\n", input_history.lines[pos]);
+  } while (pos != input_history.last);
+}
+
 static void cmd_info(const char *line, int argc, char **argv)
 {
   out_text("camera:\n");
@@ -876,18 +1039,18 @@ static void cmd_keys(const char *line, int argc, char **argv)
   out_text("keys:\n");
   out_text("TAB       Select next room\n");
   out_text("G         Grab (move) selected room\n");
-  out_text("N         Add/remove neighbor (press N, left click on a room)\n");
   out_text("X, Y, Z   While moving room, limit movement to axis\n");
+  out_text("N         Add/remove neighbor (press N, left click on a room)\n");
   out_text("/, ENTER  Open text command input\n");
   out_text("ESC       Close text command input\n");
   out_text("CTRL+L    Clear text\n");
 
   out_text("\n");
   out_text("mouse:\n");
-  out_text("LEFT    Confirm command\n");
-  out_text("MIDDLE  Move (with SHIFT) or rotate camera\n");
-  out_text("RIGHT   Cancel command / select room\n");
-  out_text("SCROLL  Zoom\n");
+  out_text("LEFT      Confirm command\n");
+  out_text("MIDDLE    Move (with SHIFT) or rotate camera\n");
+  out_text("RIGHT     Cancel command / select room\n");
+  out_text("SCROLL    Zoom\n");
 }
 
 static const struct EDITOR_COMMAND commands[] = {
@@ -898,6 +1061,9 @@ static const struct EDITOR_COMMAND commands[] = {
   { "add",      cmd_add,      "Add room from model file" },
   { "remove",   cmd_remove,   "Remove room" },
   { "ls",       cmd_ls,       "List rooms" },
+  { "fill",     cmd_fill,     "Fill tiles of selected room" }, 
+  { "wipe",     cmd_wipe,     "Wipe tiles of selected room" }, 
+  { "history",  cmd_history,  "Show command history" }, 
   { "info",     cmd_info,     "Get camera info" },
   { "help",     cmd_help,     "Show command list" },
   { "pleh",     cmd_pleh,     NULL },
