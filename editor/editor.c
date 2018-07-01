@@ -28,6 +28,7 @@
 #define MOUSE_ACTION_ZOOM_CAM        3
 #define MOUSE_ACTION_MOVE_ROOM       4
 #define MOUSE_ACTION_SEL_NEIGHBOR    5
+#define MOUSE_ACTION_FILL_TILES      6
 
 #define MOUSE_ACTION_ALLOW_AXIS_X  (1<<0)
 #define MOUSE_ACTION_ALLOW_AXIS_Y  (1<<1)
@@ -57,7 +58,12 @@ struct MOUSE_ACTION {
   float room_pos[3];
   struct EDITOR_ROOM *hover_room;
   float hover_room_save_color[4];
-  uint16_t paint_tiles_mark;
+  uint16_t fill_tile_value;
+  int start_tile_x;
+  int start_tile_y;
+  int end_tile_x;
+  int end_tile_y;
+  uint16_t save_tiles[256][256];
 };
 
 struct EDITOR editor;
@@ -99,7 +105,6 @@ static struct EDITOR_ROOM *new_room(const char *name)
   room->n_tiles_y = 0;
   vec3_load(room->pos, 0, 0, 0);
   memset(room->tiles, 0, sizeof(room->tiles));
-  //room->tiles[128+19-room->id][128+20] = 1;
   
   vec4_load(room->display.color, 1, 1, 1, 1);
   room->display.tiles_changed = 1;
@@ -161,6 +166,29 @@ static void toggle_room_neighbor(struct EDITOR_ROOM *room, struct EDITOR_ROOM *n
   }
 }
 
+static void fill_room_tiles(struct EDITOR_ROOM *room, uint16_t tile, int x_first, int y_first, int x_last, int y_last)
+{
+  if (x_first > x_last) {
+    int tmp = x_first;
+    x_first = x_last;
+    x_last = tmp;
+  }
+  if (y_first > y_last) {
+    int tmp = y_first;
+    y_first = y_last;
+    y_last = tmp;
+  }
+  
+  for (int y = y_first; y <= y_last; y++) {
+    for (int x = x_first; x <= x_last; x++) {
+      int tx = 128 + x;
+      int ty = 128 + y;
+      if (tx >= 0 && tx < 256 && ty >= 0 && ty < 256)
+        room->tiles[ty][tx] = tile;
+    }
+  }
+}
+
 static struct EDITOR_ROOM *get_room_by_name(const char *name)
 {
   for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
@@ -213,11 +241,26 @@ static void start_mouse_action(int action_id)
   action.start_x = action.mouse_x;
   action.start_y = action.mouse_y;
   action.camera = editor.camera;
-  action.hover_room = NULL;
-  if (editor.selected_room)
-    vec3_copy(action.room_pos, editor.selected_room->pos);
-  else
-    vec3_load(action.room_pos, 0, 0, 0);
+
+  switch (action_id) {
+  case MOUSE_ACTION_MOVE_ROOM:
+    action.allow_axis_flags = MOUSE_ACTION_ALLOW_AXIS_X | MOUSE_ACTION_ALLOW_AXIS_Z;
+    if (editor.selected_room)
+      vec3_copy(action.room_pos, editor.selected_room->pos);
+    else
+      vec3_load(action.room_pos, 0, 0, 0);
+    break;
+
+  case MOUSE_ACTION_SEL_NEIGHBOR:
+    action.hover_room = NULL;
+    break;
+
+  case MOUSE_ACTION_FILL_TILES:
+    action.fill_tile_value = 1;
+    if (editor.selected_room)
+      memcpy(action.save_tiles, editor.selected_room->tiles, sizeof(action.save_tiles));
+    break;
+  }
 }
 
 static void end_mouse_action(void)
@@ -230,12 +273,8 @@ static void end_mouse_action(void)
   action.action_id = MOUSE_ACTION_NONE;
 }
 
-static void paint_tile_at_screen_pos(int screen_x, int screen_y, uint16_t mark)
+static int get_room_tile_at_screen_pos(struct EDITOR_ROOM *room, int screen_x, int screen_y, int *p_tile_x, int *p_tile_y)
 {
-  struct EDITOR_ROOM *room = editor.selected_room;
-  if (! room)
-    return;
-  
   float pos[3], vec[3];
   get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
   
@@ -247,13 +286,10 @@ static void paint_tile_at_screen_pos(int screen_x, int screen_y, uint16_t mark)
     alpha*vec[1] + pos[1],
     alpha*vec[2] + pos[2],
   };
-  
-  int tile_x = 128 + 4 * (click[0] - room->pos[0]);
-  int tile_y = 128 + 4 * (click[2] - room->pos[2]);
-  if (tile_x < 0 || tile_x >= 256 || tile_y < 0 || tile_y >= 256)
-    return;
-  room->tiles[tile_y][tile_x] = mark;
-  room->display.tiles_changed = 1;
+
+  *p_tile_x = round(4 * (click[0] - room->pos[0]));
+  *p_tile_y = round(4 * (click[2] - room->pos[2]));
+  return 0;
 }
 
 static int parse_int(const char *str, int *p_num)
@@ -527,6 +563,22 @@ void editor_handle_cursor_pos(double x, double y)
         action.hover_room = sel;
       }
     }
+    return;
+  }
+
+  if (action.action_id == MOUSE_ACTION_FILL_TILES) {
+    int tile_x, tile_y;
+    struct EDITOR_ROOM *room = editor.selected_room;
+    if (room && get_room_tile_at_screen_pos(room, action.mouse_x, action.mouse_y, &tile_x, &tile_y) == 0) {
+      if (tile_x != action.end_tile_x || tile_y != action.end_tile_y) {
+        memcpy(room->tiles, action.save_tiles, sizeof(room->tiles));
+        action.end_tile_x = tile_x;
+        action.end_tile_y = tile_y;
+        fill_room_tiles(room, action.fill_tile_value, action.start_tile_x, action.start_tile_y, action.end_tile_x, action.end_tile_y);
+        room->display.tiles_changed = 1;
+      }
+    }
+    return;
   }
 }
 
@@ -551,6 +603,10 @@ void editor_handle_mouse_button(int button, int press, int mods)
         end_mouse_action();
       }
       break;
+
+    case MOUSE_ACTION_FILL_TILES:
+      end_mouse_action();
+      break;
     }
 
     return;
@@ -563,6 +619,14 @@ void editor_handle_mouse_button(int button, int press, int mods)
     switch (action.action_id) {
     case MOUSE_ACTION_MOVE_ROOM:
       vec3_copy(editor.selected_room->pos, action.room_pos);
+      end_mouse_action();
+      break;
+
+    case MOUSE_ACTION_FILL_TILES:
+      if (editor.selected_room) {
+        memcpy(editor.selected_room->tiles, action.save_tiles, sizeof(editor.selected_room->tiles));
+        editor.selected_room->display.tiles_changed = 1;
+      }
       end_mouse_action();
       break;
 
@@ -733,10 +797,8 @@ void editor_handle_key(int key, int press, int mods)
     break;
 
   case 'G':
-    if (! editor.input.active && mods == 0 && editor.selected_room) {
+    if (! editor.input.active && mods == 0 && editor.selected_room)
       start_mouse_action(MOUSE_ACTION_MOVE_ROOM);
-      action.allow_axis_flags = MOUSE_ACTION_ALLOW_AXIS_X | MOUSE_ACTION_ALLOW_AXIS_Z;
-    }
     break;
 
   case 'N':
@@ -764,19 +826,23 @@ void editor_handle_key(int key, int press, int mods)
       editor.quit = 1;
     break;
 
-  case '`':
-    if (! editor.input.active)
-      action.paint_tiles_mark = 0;
-    break;
-
-  case '1':
-    if (! editor.input.active)
-      action.paint_tiles_mark = 1;
-    break;
-    
-  case ' ':
-    if (! editor.input.active)
-      paint_tile_at_screen_pos(action.mouse_x, action.mouse_y, action.paint_tiles_mark);
+  case 'F':
+    if (action.action_id == MOUSE_ACTION_NONE && ! editor.input.active && editor.selected_room) {
+      int tile_x, tile_y;
+      if (get_room_tile_at_screen_pos(editor.selected_room, action.mouse_x, action.mouse_y, &tile_x, &tile_y) == 0) {
+        start_mouse_action(MOUSE_ACTION_FILL_TILES);
+        action.start_tile_x = action.end_tile_x = tile_x;
+        action.start_tile_y = action.end_tile_y = tile_y;
+        fill_room_tiles(editor.selected_room, action.fill_tile_value, tile_x, tile_y, tile_x, tile_y);
+        editor.selected_room->display.tiles_changed = 1;
+      }
+      return;
+    }
+    if (action.action_id == MOUSE_ACTION_FILL_TILES && ! editor.input.active && editor.selected_room) {
+      action.fill_tile_value = 1 - action.fill_tile_value;
+      fill_room_tiles(editor.selected_room, action.fill_tile_value, action.start_tile_x, action.start_tile_y, action.end_tile_x, action.end_tile_y);
+      editor.selected_room->display.tiles_changed = 1;
+    }
     break;
     
   case 'L':
@@ -974,14 +1040,7 @@ static void cmd_fill(const char *line, int argc, char **argv)
     return;
   }
   
-  for (int y = y_first; y <= y_last; y++) {
-    for (int x = x_first; x <= x_last; x++) {
-      int tx = 128 + x;
-      int ty = 128 + y;
-      if (tx >= 0 && tx < 256 && ty >= 0 && ty < 256)
-        room->tiles[ty][tx] = value;
-    }
-  }
+  fill_room_tiles(room, value, x_first, y_first, x_last, y_last);
   room->display.tiles_changed = 1;
 }
 
@@ -1040,6 +1099,7 @@ static void cmd_keys(const char *line, int argc, char **argv)
   out_text("TAB       Select next room\n");
   out_text("G         Grab (move) selected room\n");
   out_text("X, Y, Z   While moving room, limit movement to axis\n");
+  out_text("F         Fill room tiles\n");
   out_text("N         Add/remove neighbor (press N, left click on a room)\n");
   out_text("/, ENTER  Open text command input\n");
   out_text("ESC       Close text command input\n");
