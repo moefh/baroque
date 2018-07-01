@@ -364,10 +364,10 @@ void render_screen(void)
                 editor.camera.center[2]);
   set_text_color(1, 1, 1, 0.8);
   for (int i = 0; i < 20; i++)
-    render_text(0, 21+i, 0.75, editor.text_screen[EDITOR_SCREEN_LINES-20+i], EDITOR_SCREEN_COLS);
+    render_text(0, 22.5+i, 0.75, editor.text_screen[EDITOR_SCREEN_LINES-20+i], EDITOR_SCREEN_COLS);
   if (editor.input.active) {
-    set_text_color(1, 1, 0, 1); render_text(0, 30, 1, ">", 0);
-    set_text_color(1, 1, 1, 1); render_text(2, 30, 1, editor.input.line, 0);
-    set_text_color(1, 0, 0, 1); render_text(2 + editor.input.cursor_pos, 30, 1, "_", 0);
+    set_text_color(1, 1, 0, 1); render_text(0, 31, 1, ">", 0);
+    set_text_color(1, 1, 1, 1); render_text(2, 31, 1, editor.input.line, 0);
+    set_text_color(1, 0, 0, 1); render_text(2 + editor.input.cursor_pos, 31, 1, "_", 0);
   }
 }

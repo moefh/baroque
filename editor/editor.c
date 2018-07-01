@@ -334,7 +334,7 @@ void init_editor(void)
   for (int i = 0; i < EDITOR_SCREEN_LINES; i++)
     editor.text_screen[i] = &screen.text[i*EDITOR_SCREEN_COLS];
 
-  out_text("Type ENTER help ENTER to get help\n");
+  out_text("Type /help to get help\n");
 }
 
 void editor_handle_mouse_scroll(double x_off, double y_off)
@@ -429,6 +429,15 @@ void editor_handle_cursor_pos(double x, double y)
       }
     }
   }
+}
+
+static void start_text_input(void)
+{
+  struct EDITOR_INPUT_LINE *input = &editor.input;
+  input->line[0] = '\0';
+  input->line_len = 0;
+  input->cursor_pos = 0;
+  input->active = 1;
 }
 
 static void start_mouse_action(int action_id)
@@ -526,8 +535,11 @@ void editor_handle_char(unsigned int codepoint)
 {
   struct EDITOR_INPUT_LINE *input = &editor.input;
   
-  if (! input->active)
+  if (! input->active) {
+    if (codepoint == '/')
+      start_text_input();
     return;
+  }
 
   if (codepoint < 32 || codepoint >= 127)
     return;
@@ -631,10 +643,7 @@ void editor_handle_key(int key, int press, int mods)
       input->active = 0;
     } else {
       end_mouse_action();
-      input->line[0] = '\0';
-      input->line_len = 0;
-      input->cursor_pos = 0;
-      input->active = 1;
+      start_text_input();
     }
     break;
 
@@ -834,18 +843,44 @@ static void cmd_info(const char *line, int argc, char **argv)
 
 static void cmd_help(const char *line, int argc, char **argv)
 {
-  for (int i = 0; commands[i].name != NULL; i++)
-    out_text("%-10s %s\n", commands[i].name, commands[i].description);
+  for (int i = 0; commands[i].name != NULL; i++) {
+    if (commands[i].description)
+      out_text("%-10s %s\n", commands[i].name, commands[i].description);
+  }
+}
+
+static void cmd_pleh(const char *line, int argc, char **argv)
+{
+  int n_commands = 0;
+  while (commands[n_commands].name != NULL)
+    n_commands++;
+  
+  for (int i = n_commands-1; i >= 0; i--) {
+    if (commands[i].description) {
+      const char *p = commands[i].name + strlen(commands[i].name);
+      while (p-- > commands[i].name)
+        out_text("%c", *p);
+      for (int j = strlen(commands[i].name); j < 11; j++)
+        out_text(" ");
+      p = commands[i].description + strlen(commands[i].description);
+      while (p-- > commands[i].description)
+        out_text("%c", *p);
+      out_text("\n");
+    }
+  }
 }
 
 static void cmd_keys(const char *line, int argc, char **argv)
 {
   out_text("\n");
   out_text("keys:\n");
-  out_text("G       Grab (move) selected room\n");
-  out_text("N       Add/remove neighbors (press N, left click on a room)\n");
-  out_text("X,Y,Z   While moving room, limit movement to axis\n");
-  out_text("CTRL+L  Clear text\n");
+  out_text("TAB       Select next room\n");
+  out_text("G         Grab (move) selected room\n");
+  out_text("N         Add/remove neighbor (press N, left click on a room)\n");
+  out_text("X, Y, Z   While moving room, limit movement to axis\n");
+  out_text("/, ENTER  Open text command input\n");
+  out_text("ESC       Close text command input\n");
+  out_text("CTRL+L    Clear text\n");
 
   out_text("\n");
   out_text("mouse:\n");
@@ -865,5 +900,6 @@ static const struct EDITOR_COMMAND commands[] = {
   { "ls",       cmd_ls,       "List rooms" },
   { "info",     cmd_info,     "Get camera info" },
   { "help",     cmd_help,     "Show command list" },
+  { "pleh",     cmd_pleh,     NULL },
   { NULL }
 };
