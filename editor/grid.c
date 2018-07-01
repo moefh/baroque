@@ -118,12 +118,6 @@ int make_grid_tiles(struct GRID_TILES *tiles, int width, int height)
   tiles->mesh = make_grid_tiles_mesh();
   if (! tiles->mesh)
     goto err;
-  //memset(tiles->texture.data, 0xff, width * height * 4);
-  set_tile(tiles->texture.data, 128, 128, 0xffffffff);
-  set_tile(tiles->texture.data, 128+20, 128-21, 0xff0000ff);
-  set_tile(tiles->texture.data, 128+20, 128+00, 0x00ff00ff);
-  set_tile(tiles->texture.data, 128+20, 128+01, 0x0000ffff);
-  set_tile(tiles->texture.data, 128+20, 128+20, 0xffff00ff);
   return 0;
 
  err:

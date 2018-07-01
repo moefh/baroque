@@ -278,13 +278,19 @@ static int get_room_tile_at_screen_pos(struct EDITOR_ROOM *room, int screen_x, i
   float pos[3], vec[3];
   get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
   
-  // calculate click = intersection of line (vec+pos) with plane y=0
-  // TODO: intersect with plane y=room->pos[1] instead
-  float alpha = -pos[1] / vec[1];
+  // calculate click = intersection of line (t*vec+pos) with plane y=room->pos[1]
+  float room_normal[3] = { 0, 1, 0 };
+  float denom = vec3_dot(room_normal, vec);
+  if (fabs(denom) < 0.00001)
+    return 1;  // screen ray (t*vec+pos) is parallel to plane
+  float floor_vec[3];
+  vec3_sub(floor_vec, room->pos, pos);
+  float t = vec3_dot(room_normal, floor_vec) / denom;
+
   float click[3] = {
-    alpha*vec[0] + pos[0],
-    alpha*vec[1] + pos[1],
-    alpha*vec[2] + pos[2],
+    t*vec[0] + pos[0],
+    t*vec[1] + pos[1],
+    t*vec[2] + pos[2],
   };
 
   *p_tile_x = round(4 * (click[0] - room->pos[0]));
