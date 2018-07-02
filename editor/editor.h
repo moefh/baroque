@@ -8,6 +8,7 @@
 
 #include "debug.h"
 #include "camera.h"
+#include "room.h"
 
 #define KEY_MOD_SHIFT   (1<<0)
 #define KEY_MOD_CTRL    (1<<1)
@@ -61,30 +62,6 @@ void out_text(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 #define EDITOR_SCREEN_LINES        50
 #define EDITOR_SCREEN_COLS         100
 
-#define EDITOR_ROOM_NAME_LEN      32
-#define EDITOR_ROOM_MAX_NEIGHBORS 16
-
-struct EDITOR_ROOM_DISPLAY_INFO {
-  float color[4];
-  int tiles_changed;
-};
-
-struct EDITOR_ROOM {
-  struct EDITOR_ROOM *next;
-  int id;
-  char name[EDITOR_ROOM_NAME_LEN];
-  float pos[3];
-  
-  int n_tiles_x;
-  int n_tiles_y;
-  uint16_t tiles[256][256];
-  
-  int n_neighbors;
-  struct EDITOR_ROOM *neighbors[EDITOR_ROOM_MAX_NEIGHBORS];
-
-  struct EDITOR_ROOM_DISPLAY_INFO display;
-};
-
 struct EDITOR_INPUT_LINE {
   int active;
   size_t cursor_pos;
@@ -97,9 +74,8 @@ struct EDITOR {
   const char *text_screen[EDITOR_SCREEN_LINES];
   struct EDITOR_INPUT_LINE input;
 
-  int next_room_id;
   struct EDITOR_ROOM *selected_room;
-  struct EDITOR_ROOM *room_list;
+  struct EDITOR_ROOM_LIST rooms;
   float grid_pos[3];
   float grid_color[4];
   struct CAMERA camera;

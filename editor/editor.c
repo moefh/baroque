@@ -8,12 +8,16 @@
 #include <stdarg.h>
 
 #include "editor.h"
+#include "save.h"
+#include "load.h"
 #include "debug.h"
 #include "camera.h"
 #include "matrix.h"
 #include "model.h"
 #include "gfx.h"
 #include "render.h"
+
+#define DEFAULT_MAP_FILE "data/world.map"
 
 #define MAX_COMMAND_ARGS   32
 #define INPUT_HISTORY_SIZE 64
@@ -41,6 +45,8 @@ struct EDITOR_COMMAND {
   command_func func;
   const char *description;
 };
+
+static const struct EDITOR_COMMAND *get_editor_commands(void);
 
 struct TEXT_SCREEN {
   char text[EDITOR_SCREEN_LINES*EDITOR_SCREEN_COLS];
@@ -73,7 +79,6 @@ static const float room_selected_color[4] = { 1.0, 1.0, 1.0, 0.80 };
 static const float room_neighbor_color[4] = { 0.5, 0.5, 1.0, 0.75 };
 static const float room_hover_color[4] =    { 1.0, 0.0, 0.0, 0.75 };
 
-static const struct EDITOR_COMMAND commands[];
 static struct MOUSE_ACTION action;
 static struct TEXT_SCREEN screen;
 static struct {
@@ -87,42 +92,6 @@ static struct {
   int size;
   int last_view;
 } input_history;
-
-static struct EDITOR_ROOM *new_room(const char *name)
-{
-  struct EDITOR_ROOM *room = malloc(sizeof(*room));
-  if (! room)
-    return NULL;
-  room->next = editor.room_list;
-  editor.room_list = room;
-
-  room->id = editor.next_room_id++;
-  strncpy(room->name, name, sizeof(room->name));
-  room->name[sizeof(room->name)-1] = '\0';
-
-  room->n_neighbors = 0;
-  room->n_tiles_x = 0;
-  room->n_tiles_y = 0;
-  vec3_load(room->pos, 0, 0, 0);
-  memset(room->tiles, 0, sizeof(room->tiles));
-  
-  vec4_load(room->display.color, 1, 1, 1, 1);
-  room->display.tiles_changed = 1;
-  return room;
-}
-
-static int free_room(struct EDITOR_ROOM *room)
-{
-  struct EDITOR_ROOM **p = &editor.room_list;
-  while (*p && *p != room)
-    p = &(*p)->next;
-  if (! *p)
-    return 1;
-
-  *p = room->next;
-  free(room);
-  return 0;
-}
 
 static void set_room_neighbor_color(struct EDITOR_ROOM *room, const float *color)
 {
@@ -142,6 +111,34 @@ static void select_room(struct EDITOR_ROOM *room)
     vec4_copy(room->display.color, room_selected_color);
     set_room_neighbor_color(room, room_neighbor_color);
   }
+}
+
+struct EDITOR_ROOM *get_room_at_screen_pos(int screen_x, int screen_y)
+{
+  float pos[3], vec[3];
+  get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
+  
+  // calculate click = intersection of line (vec+pos) with plane y=0
+  float alpha = -pos[1] / vec[1];
+  float click[3] = {
+    alpha*vec[0] + pos[0],
+    alpha*vec[1] + pos[1],
+    alpha*vec[2] + pos[2],
+  };
+
+  // select room with center closest to click
+  float sel_dist = 0;
+  struct EDITOR_ROOM *sel = NULL;
+  for (struct EDITOR_ROOM *room = editor.rooms.list; room != NULL; room = room->next) {
+    float delta[3];
+    vec3_sub(delta, room->pos, click);
+    float dist = vec3_dot(delta, delta);
+    if (sel == NULL || sel_dist > dist) {
+      sel = room;
+      sel_dist = dist;
+    }
+  }
+  return sel;
 }
 
 static void toggle_room_neighbor(struct EDITOR_ROOM *room, struct EDITOR_ROOM *neighbor)
@@ -166,64 +163,74 @@ static void toggle_room_neighbor(struct EDITOR_ROOM *room, struct EDITOR_ROOM *n
   }
 }
 
-static void fill_room_tiles(struct EDITOR_ROOM *room, uint16_t tile, int x_first, int y_first, int x_last, int y_last)
+
+static int load_room_gfx(struct EDITOR_ROOM *room)
 {
-  if (x_first > x_last) {
-    int tmp = x_first;
-    x_first = x_last;
-    x_last = tmp;
-  }
-  if (y_first > y_last) {
-    int tmp = y_first;
-    y_first = y_last;
-    y_last = tmp;
-  }
+  char filename[256];
+  snprintf(filename, sizeof(filename), "data/%s.glb", room->name);
   
-  for (int y = y_first; y <= y_last; y++) {
-    for (int x = x_first; x <= x_last; x++) {
-      int tx = 128 + x;
-      int ty = 128 + y;
-      if (tx >= 0 && tx < 256 && ty >= 0 && ty < 256)
-        room->tiles[ty][tx] = tile;
-    }
+  struct MODEL model;
+  if (read_glb_model(&model, filename) != 0) {
+    out_text("** ERROR: can't read model from '%s'\n", filename);
+    return 1;
   }
+
+  if (gfx_upload_model(&model, GFX_MESH_TYPE_ROOM, room->display.gfx_id, room) != 0) {
+    out_text("** ERROR: can't create model gfx\n");
+    free_model(&model);
+    return 1;
+  }
+
+  free_model(&model);
+  return 0;
 }
 
-static struct EDITOR_ROOM *get_room_by_name(const char *name)
+static void delete_room(struct EDITOR_ROOM *room)
 {
-  for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
-    if (strcmp(room->name, name) == 0)
-      return room;
-  }
-  return NULL;
+  if (editor.selected_room == room)
+    select_room(NULL);
+  
+  gfx_free_meshes(GFX_MESH_TYPE_ROOM, room->display.gfx_id);
+  list_remove_room(&editor.rooms, room);
 }
 
-static struct EDITOR_ROOM *get_room_at_screen_pos(int screen_x, int screen_y)
+static struct EDITOR_ROOM *add_room(const char *name)
 {
-  float pos[3], vec[3];
-  get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
-  
-  // calculate click = intersection of line (vec+pos) with plane y=0
-  float alpha = -pos[1] / vec[1];
-  float click[3] = {
-    alpha*vec[0] + pos[0],
-    alpha*vec[1] + pos[1],
-    alpha*vec[2] + pos[2],
-  };
-
-  // select room with center closest to click
-  float sel_dist = 0;
-  struct EDITOR_ROOM *sel = NULL;
-  for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
-    float delta[3];
-    vec3_sub(delta, room->pos, click);
-    float dist = vec3_dot(delta, delta);
-    if (sel == NULL || sel_dist > dist) {
-      sel = room;
-      sel_dist = dist;
-    }
+  struct EDITOR_ROOM *room = list_add_room(&editor.rooms, name);
+  if (! room) {
+    out_text("*** ERROR: out of memory for room\n");
+    return NULL;
   }
-  return sel;
+  if (load_room_gfx(room) != 0) {
+    list_remove_room(&editor.rooms, room);
+    return NULL;
+  }
+  return room;
+}
+
+static int load_map(const char *filename)
+{
+  struct EDITOR_ROOM_LIST new_rooms;
+  if (load_map_rooms(filename, &new_rooms) != 0)
+    return 1;
+
+  select_room(NULL);
+  while (editor.rooms.list)
+    delete_room(editor.rooms.list);
+
+  int has_error = 0;
+  struct EDITOR_ROOM *room = new_rooms.list;
+  while (room != NULL) {
+    struct EDITOR_ROOM *next = room->next;
+    if (load_room_gfx(room) != 0) {
+      list_remove_room(&editor.rooms, room);
+      has_error = 1;
+    }
+    room = next;
+  }
+  editor.rooms = new_rooms;
+  select_room(editor.rooms.list);
+  return has_error;
 }
 
 static void start_text_input(void)
@@ -354,6 +361,8 @@ static void run_command_line(const char *command)
   if (cmdline.argc == 0)
     return;
 
+  const struct EDITOR_COMMAND *commands = get_editor_commands();
+  
   add_input_history(command);
   out_text("> %s\n", command);
   for (int i = 0; commands[i].name != NULL; i++) {
@@ -376,6 +385,7 @@ static int autocomplete(char *line, size_t line_size, size_t *p_cursor_pos, cons
     return 0;
 
   // find all possible completions
+  const struct EDITOR_COMMAND *commands = get_editor_commands();
   size_t num_comp = 0;
   for (int i = 0; commands[i].name != NULL; i++) {
     if (memcmp(line + frag_pos, commands[i].name, frag_len) == 0) {
@@ -387,10 +397,9 @@ static int autocomplete(char *line, size_t line_size, size_t *p_cursor_pos, cons
   if (num_comp == 0)
     return 0;
 
-
   // find size of common text for all completions
   size_t common_size = strlen(comp[0]->name);
-  for (int c = 1; c < num_comp; c++) {
+  for (size_t c = 1; c < num_comp; c++) {
     for (size_t p = frag_len; p < common_size; p++) {
       if (comp[c]->name[p] != comp[c-1]->name[p]) {
         common_size = p;
@@ -456,9 +465,8 @@ void out_text(const char *fmt, ...)
 
 void init_editor(void)
 {
-  editor.room_list = NULL;
   editor.selected_room = NULL;
-  editor.next_room_id = 0;
+  init_room_list(&editor.rooms);
   
   init_camera(&editor.camera);
   editor.camera.distance = 25;
@@ -787,7 +795,7 @@ void editor_handle_key(int key, int press, int mods)
       if (sel)
         sel = editor.selected_room->next;
       if (! sel)
-        sel = editor.room_list;
+        sel = editor.rooms.list;
       select_room(sel);
     }
     break;
@@ -856,6 +864,16 @@ void editor_handle_key(int key, int press, int mods)
       clear_text_screen();
     break;
 
+  case 'S':
+    if ((mods & KEY_MOD_CTRL) && action.action_id == MOUSE_ACTION_NONE && ! editor.input.active)
+      save_map_rooms(DEFAULT_MAP_FILE, &editor.rooms);
+    break;
+
+  case 'R':
+    if ((mods & KEY_MOD_CTRL) && action.action_id == MOUSE_ACTION_NONE)
+      load_map(DEFAULT_MAP_FILE);
+    break;
+    
   default:
     //if (! editor.input.active)
     //  out_text("key: %d (%c)\n", key, (key >= 32 && key < 127) ? key : '-');
@@ -866,53 +884,6 @@ void editor_handle_key(int key, int press, int mods)
 int process_editor_step(void)
 {
   return editor.quit;
-}
-
-static struct EDITOR_ROOM *add_room(const char *name)
-{
-  char filename[256];
-  snprintf(filename, sizeof(filename), "data/%s.glb", name);
-  
-  struct MODEL model;
-  if (read_glb_model(&model, filename) != 0) {
-    out_text("** ERROR: can't read model from '%s'\n", filename);
-    return NULL;
-  }
-
-  struct EDITOR_ROOM *room = new_room(name);
-  if (! room) {
-    out_text("*** ERROR: out of memory for room\n");
-    free_model(&model);
-    return NULL;
-  }
-  
-  if (gfx_upload_model(&model, GFX_MESH_TYPE_ROOM, room->id, room) != 0) {
-    out_text("** ERROR: can't create model gfx\n");
-    free_model(&model);
-    return NULL;
-  }
-
-  free_model(&model);
-  return room;
-}
-
-static void delete_room(struct EDITOR_ROOM *room)
-{
-  if (editor.selected_room == room)
-    select_room(NULL);
-  
-  // remove room from everyone's neighbor list
-  for (struct EDITOR_ROOM *p = editor.room_list; p != NULL; p = p->next) {
-    for (int i = 0; i < p->n_neighbors;) {
-      if (p->neighbors[i] == room)
-        memcpy(&p->neighbors[i], &p->neighbors[i+1], sizeof(p->neighbors[0]) * (p->n_neighbors-1-i));
-      else
-        i++;
-    }
-  }
-
-  gfx_free_meshes(GFX_MESH_TYPE_ROOM, room->id);
-  free_room(room);
 }
 
 static void cmd_quit(const char *line, int argc, char **argv)
@@ -933,7 +904,7 @@ static void cmd_sel(const char *line, int argc, char **argv)
   }
   const char *name = argv[1];
   
-  struct EDITOR_ROOM *room = get_room_by_name(name);
+  struct EDITOR_ROOM *room = get_room_by_name(&editor.rooms, name);
   if (room) {
     select_room(room);
     out_text("- selected room '%s'\n", room->name);
@@ -951,7 +922,7 @@ static void cmd_add(const char *line, int argc, char **argv)
   }
   const char *name = argv[1];
 
-  for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
+  for (struct EDITOR_ROOM *room = editor.rooms.list; room != NULL; room = room->next) {
     if (strcmp(room->name, name) == 0) {
       out_text("** ERROR: room '%s' already exists\n", name);
       return;
@@ -986,7 +957,7 @@ static void cmd_remove(const char *line, int argc, char **argv)
     name[sizeof(name)-1] = '\0';
   }
   
-  struct EDITOR_ROOM *room = get_room_by_name(name);
+  struct EDITOR_ROOM *room = get_room_by_name(&editor.rooms, name);
   if (! room) {
     out_text("** ERROR: room '%s' not found\n", name);
     return;
@@ -999,8 +970,8 @@ static void cmd_remove(const char *line, int argc, char **argv)
 static void cmd_ls(const char *line, int argc, char **argv)
 {
   int n_rooms = 0;
-  for (struct EDITOR_ROOM *room = editor.room_list; room != NULL; room = room->next) {
-    out_text("- [%d] %s\n", room->id, room->name);
+  for (struct EDITOR_ROOM *room = editor.rooms.list; room != NULL; room = room->next) {
+    out_text("- %s\n", room->name);
     n_rooms++;
   }
   out_text("%d rooms\n", n_rooms);
@@ -1062,6 +1033,28 @@ static void cmd_history(const char *line, int argc, char **argv)
   } while (pos != input_history.last);
 }
 
+static void cmd_save(const char *line, int argc, char **argv)
+{
+  const char *filename;
+  if (argc < 2)
+    filename = DEFAULT_MAP_FILE;
+  else
+    filename = argv[1];
+
+  save_map_rooms(filename, &editor.rooms);
+}
+
+static void cmd_load(const char *line, int argc, char **argv)
+{
+  const char *filename;
+  if (argc < 2)
+    filename = DEFAULT_MAP_FILE;
+  else
+    filename = argv[1];
+
+  load_map(filename);
+}
+
 static void cmd_info(const char *line, int argc, char **argv)
 {
   out_text("camera:\n");
@@ -1071,6 +1064,7 @@ static void cmd_info(const char *line, int argc, char **argv)
 
 static void cmd_help(const char *line, int argc, char **argv)
 {
+  const struct EDITOR_COMMAND *commands = get_editor_commands();
   for (int i = 0; commands[i].name != NULL; i++) {
     if (commands[i].description)
       out_text("%-10s %s\n", commands[i].name, commands[i].description);
@@ -1079,6 +1073,7 @@ static void cmd_help(const char *line, int argc, char **argv)
 
 static void cmd_pleh(const char *line, int argc, char **argv)
 {
+  const struct EDITOR_COMMAND *commands = get_editor_commands();
   int n_commands = 0;
   while (commands[n_commands].name != NULL)
     n_commands++;
@@ -1110,6 +1105,7 @@ static void cmd_keys(const char *line, int argc, char **argv)
   out_text("/, ENTER  Open text command input\n");
   out_text("ESC       Close text command input\n");
   out_text("CTRL+L    Clear text\n");
+  out_text("CTRL+S    Save map\n");
 
   out_text("\n");
   out_text("mouse:\n");
@@ -1120,6 +1116,8 @@ static void cmd_keys(const char *line, int argc, char **argv)
 }
 
 static const struct EDITOR_COMMAND commands[] = {
+  { "save",     cmd_save,     "Save map" },
+  { "load",     cmd_load,     "Load map" },
   { "keys",     cmd_keys,     "Show key/mouse shortcuts" },
   { "quit",     cmd_quit,     "Quit" },
   { "cls",      cmd_cls,      "Clear text" },
@@ -1135,3 +1133,8 @@ static const struct EDITOR_COMMAND commands[] = {
   { "pleh",     cmd_pleh,     NULL },
   { NULL }
 };
+
+static const struct EDITOR_COMMAND *get_editor_commands(void)
+{
+  return commands;
+}
