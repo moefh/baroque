@@ -225,11 +225,16 @@ static int load_map(const char *filename)
     if (load_room_gfx(room) != 0) {
       list_remove_room(&editor.rooms, room);
       has_error = 1;
+    } else {
+      vec4_copy(room->display.color, room_normal_color);
     }
     room = next;
   }
   editor.rooms = new_rooms;
-  select_room(editor.rooms.list);
+
+  for (struct EDITOR_ROOM *room = new_rooms.list; room != NULL; room = room->next)
+    if (room->next == NULL)
+      select_room(room);
   return has_error;
 }
 
