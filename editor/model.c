@@ -352,14 +352,14 @@ static void init_model(struct MODEL *model)
 
 int read_glb_model(struct MODEL *model, const char *filename)
 {
-  struct GLB_READER glb;
-  if (read_glb(&glb, filename) != 0)
+  struct GLB_FILE glb;
+  if (open_glb(&glb, filename) != 0)
     return 1;
   init_model(model);
   
   struct MODEL_READER reader = {
     .model = model,
-    .gltf = &glb.gltf_reader->gltf,
+    .gltf = glb.gltf,
     .file = glb.file,
     .data_off = glb.data_off,
     .data_len = glb.data_len,
@@ -370,20 +370,17 @@ int read_glb_model(struct MODEL *model, const char *filename)
   struct GLTF_DATA *gltf = reader.gltf;
   if (gltf->scene == GLTF_NONE)
     goto err;
-
   struct GLTF_SCENE *scene = &gltf->scenes[gltf->scene];
   for (uint16_t i = 0; i < scene->n_nodes; i++) {
     if (convert_gltf_node(&reader, &gltf->nodes[i]) != 0)
       goto err;
   }
 
-  fclose(glb.file);
-  free_gltf_reader(glb.gltf_reader);
+  close_glb(&glb);
   return 0;
 
  err:
   free_model(model);
-  fclose(glb.file);
-  free_gltf_reader(glb.gltf_reader);
+  close_glb(&glb);
   return 1;
 }

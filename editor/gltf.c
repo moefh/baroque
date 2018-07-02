@@ -7,384 +7,16 @@
 
 #include "gltf.h"
 #include "matrix.h"
+#include "json.h"
 
 //#define DEBUG_GLTF_READER
 #ifdef DEBUG_GLTF_READER
 #define debug_log printf
 #else
-#define debug_log(s,...)
+#define debug_log(...)
 #endif
 
-/* ================================================================ */
-/* JSON parser */
-/* ================================================================ */
-
-typedef int (json_object_reader)(struct GLTF_READER *reader, const char *name, void *p);
-typedef int (json_array_reader)(struct GLTF_READER *reader, int i, void *p);
-
-static int is_json_hexdigit(char c)
-{
-  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-}
-
-static int is_json_digit(char c)
-{
-  return (c >= '0' && c <= '9');
-}
-
-static int read_json_string(struct GLTF_READER *reader, char *dest, size_t dest_len)
-{
-  if (*reader->json != '"')
-    return 1;
-  reader->json++;
-  
-  size_t n = 0;
-  while (*reader->json != '"') {
-    if (*reader->json == '\0' || n+1 >= dest_len)
-      return 1;
-
-    char c;
-    if (*reader->json == '\\') {
-      reader->json++;
-      switch (*reader->json) {
-      case '\'': c = '\\'; break;
-      case '/': c = '/'; break;
-      case '"': c = '"'; break;
-      case 'b': c = '\b'; break;
-      case 'f': c = '\f'; break;
-      case 'n': c = '\n'; break;
-      case 'r': c = '\r'; break;
-      case 't': c = '\t'; break;
-
-      case 'u':
-        if (! is_json_hexdigit(reader->json[1]) || ! is_json_hexdigit(reader->json[2]) ||
-            ! is_json_hexdigit(reader->json[3]) || ! is_json_hexdigit(reader->json[4]))
-          return 1;
-        c = '?';
-        break;
-
-      default:
-        return 1;
-      }
-    } else {
-      c = *reader->json++;
-    }
-
-    if (dest)
-      dest[n] = c;
-    n++;
-  }
-  reader->json++;
-  if (dest)
-    dest[n] = '\0';
-  return 0;
-}
-
-static int read_json_double(struct GLTF_READER *reader, double *num)
-{
-  char *end;
-  double n = strtod(reader->json, &end);
-  if (end == reader->json)
-    return 1;
-  if (num)
-    *num = n;
-  reader->json = end;
-  return 0;
-}
-
-static int read_json_float(struct GLTF_READER *reader, float *num)
-{
-  double n;
-  if (read_json_double(reader, &n) != 0)
-    return 1;
-  if (num)
-    *num = (float) n;
-  return 0;
-}
-
-static int read_json_u16(struct GLTF_READER *reader, uint16_t *num)
-{
-  double n;
-  if (read_json_double(reader, &n) != 0)
-    return 1;
-  
-  if (n < 0 || n > UINT16_MAX)
-    return 1;
-  if (num)
-    *num = (uint16_t) n;
-  return 0;
-}
-
-static int read_json_u32(struct GLTF_READER *reader, uint32_t *num)
-{
-  double n;
-  if (read_json_double(reader, &n) != 0)
-    return 1;
-  
-  if (n < 0 || n > UINT32_MAX)
-    return 1;
-  if (num)
-    *num = (uint32_t) n;
-  return 0;
-}
-
-static void skip_json_spaces(struct GLTF_READER *reader)
-{
-  while (*reader->json == ' ' || *reader->json == '\t' || *reader->json == '\r' || *reader->json == '\n')
-    reader->json++;
-}
-
-static int skip_json_string(struct GLTF_READER *reader)
-{
-  return read_json_string(reader, NULL, 0x10000);
-}
-
-static int skip_json_number(struct GLTF_READER *reader)
-{
-  return read_json_double(reader, NULL);
-}
-
-static int skip_json_value(struct GLTF_READER *reader)
-{
-  skip_json_spaces(reader);
-  //debug_log("skipping json value '%.20s'\n", reader->json);
-
-  if (strncmp(reader->json, "false", sizeof("false")-1) == 0) {
-    reader->json += sizeof("false")-1;
-    return 0;
-  }
-
-  if (strncmp(reader->json, "true", sizeof("true")-1) == 0) {
-    reader->json += sizeof("false")-1;
-    return 0;
-  }
-
-  if (strncmp(reader->json, "null", sizeof("null")-1) == 0) {
-    reader->json += sizeof("null")-1;
-    return 0;
-  }
-  
-  switch (*reader->json) {
-  case '"':
-    return skip_json_string(reader);
-    
-  case '[':
-    reader->json++;
-    skip_json_spaces(reader);
-    if (*reader->json == ']') {
-      reader->json++;
-      return 0;
-    }
-    while (1) {
-      if (skip_json_value(reader) != 0)
-        return 1;
-      skip_json_spaces(reader);
-      if (*reader->json == ']') {
-        reader->json++;
-        return 0;
-      }
-      if (*reader->json != ',')
-        return 1;
-      reader->json++;
-      skip_json_spaces(reader);
-    }
-    return 0;
-
-  case '{':
-    reader->json++;
-    skip_json_spaces(reader);
-    if (*reader->json == '}') {
-      reader->json++;
-      return 0;
-    }
-    while (1) {
-      if (skip_json_string(reader) != 0)
-        return 1;
-      skip_json_spaces(reader);
-      if (*reader->json != ':')
-        return 1;
-      reader->json++;
-      skip_json_spaces(reader);
-      if (skip_json_value(reader) != 0)
-        return 1;
-      skip_json_spaces(reader);
-      if (*reader->json == '}') {
-        reader->json++;
-        return 0;
-      }
-      if (*reader->json != ',')
-        return 1;
-      reader->json++;
-      skip_json_spaces(reader);
-    }
-    return 0;
-
-  default:
-    if (*reader->json == '-' || is_json_digit(*reader->json))
-      return skip_json_number(reader);
-    return 1;
-  }
-}
-
-static int read_json_array(struct GLTF_READER *reader, json_array_reader *reader_fun, void *reader_val)
-{
-  skip_json_spaces(reader);
-  if (*reader->json != '[')
-    return 1;
-  reader->json++;
-  skip_json_spaces(reader);
-  if (*reader->json == ']') {
-    reader->json++;
-    return 0;
-  }
-  
-  int element_index = 0;
-  while (1) {
-    int ret;
-    if (reader_fun)
-      ret = reader_fun(reader, element_index++, reader_val);
-    else
-      ret = skip_json_value(reader);
-    if (ret)
-      return 1;
-    skip_json_spaces(reader);
-    if (*reader->json == ']') {
-      reader->json++;
-      return 0;
-    }
-    if (*reader->json != ',')
-      return 1;
-    reader->json++;
-    skip_json_spaces(reader);
-  }
-}
-
-static int read_json_object(struct GLTF_READER *reader, json_object_reader *reader_fun, void *reader_val)
-{
-  skip_json_spaces(reader);
-  if (*reader->json != '{')
-    return 1;
-  reader->json++;
-  skip_json_spaces(reader);
-  if (*reader->json == '}') {
-    reader->json++;
-    return 0;
-  }
-  
-  while (1) {
-    char name[64];
-    
-    skip_json_spaces(reader);
-    if (read_json_string(reader, name, sizeof(name)) != 0)
-      return 1;
-    skip_json_spaces(reader);
-    if (*reader->json != ':')
-      return 1;
-    reader->json++;
-    skip_json_spaces(reader);
-
-    int ret;
-    if (reader_fun)
-      ret = reader_fun(reader, name, reader_val);
-    else
-      ret = skip_json_value(reader);
-    if (ret != 0)
-      return ret;
-    skip_json_spaces(reader);
-    if (*reader->json == '}') {
-      reader->json++;
-      return 0;
-    }
-    if (*reader->json != ',')
-      return 1;
-    reader->json++;
-    skip_json_spaces(reader);
-  }
-}
-
-static int read_json_boolean(struct GLTF_READER *reader, uint8_t *val)
-{
-  skip_json_spaces(reader);
-  if (strncmp(reader->json, "false", sizeof("false")-1) == 0) {
-    reader->json += sizeof("false")-1;
-    *val = 0;
-    return 0;
-  }
-  if (strncmp(reader->json, "true", sizeof("true")-1) == 0) {
-    reader->json += sizeof("true")-1;
-    *val = 1;
-    return 0;
-  }
-  return 1;
-}
-
-/* ================================================================ */
-/* glTF JSON parser */
-/* ================================================================ */
-
-struct READ_FLOAT_VEC_INFO {
-  float *vec;
-  size_t max_vals;
-  size_t num_vals;
-};
-
-struct READ_U16_VEC_INFO {
-  uint16_t *vec;
-  size_t max_vals;
-  size_t num_vals;
-};
-
-static int read_float_vector_element(struct GLTF_READER *reader, int index, void *data)
-{
-  struct READ_FLOAT_VEC_INFO *info = data;
-  if (info->num_vals >= info->max_vals)
-    return 1;
-  
-  if (read_json_float(reader, &info->vec[info->num_vals]) != 0)
-    return 1;
-  info->num_vals++;
-  return 0;
-}
-
-static int read_float_vector(struct GLTF_READER *reader, float *vec, size_t max_vals, size_t *num_vals)
-{
-  struct READ_FLOAT_VEC_INFO info = {
-    .vec = vec,
-    .max_vals = max_vals,
-    .num_vals = 0,
-  };
-  if (read_json_array(reader, read_float_vector_element, &info) != 0)
-    return 1;
-  *num_vals = info.num_vals;
-  return 0;
-}
-
-static int read_u16_vector_element(struct GLTF_READER *reader, int index, void *data)
-{
-  struct READ_U16_VEC_INFO *info = data;
-  if (info->num_vals >= info->max_vals)
-    return 1;
-  
-  if (read_json_u16(reader, &info->vec[info->num_vals]) != 0)
-    return 1;
-  info->num_vals++;
-  return 0;
-}
-
-static int read_u16_vector(struct GLTF_READER *reader, uint16_t *vec, size_t max_vals, size_t *num_vals)
-{
-  struct READ_U16_VEC_INFO info = {
-    .vec = vec,
-    .max_vals = max_vals,
-    .num_vals = 0,
-  };
-  if (read_json_array(reader, read_u16_vector_element, &info) != 0)
-    return 1;
-  *num_vals = info.num_vals;
-  return 0;
-}
-
-static int read_asset_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_asset_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   if (strcmp(name, "version") == 0) {
     int *version_ok = data;
@@ -400,7 +32,7 @@ static int read_asset_prop(struct GLTF_READER *reader, const char *name, void *d
   return skip_json_value(reader);
 }
 
-static int read_asset_object(struct GLTF_READER *reader)
+static int read_asset_object(struct JSON_READER *reader)
 {
   int asset_ver_ok = 0;
   if (read_json_object(reader, read_asset_prop, &asset_ver_ok) != 0)
@@ -421,7 +53,7 @@ struct JSON_NODE_INFO {
   uint8_t has_translation;
 };
 
-static int read_node_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_node_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct JSON_NODE_INFO *info = data;
   size_t num;
@@ -430,19 +62,19 @@ static int read_node_prop(struct GLTF_READER *reader, const char *name, void *da
     if (read_json_u16(reader, &info->node->mesh) != 0)
       return 1;
   } else if (strcmp(name, "rotation") == 0) {
-    if (read_float_vector(reader, info->rotation, 4, &num) != 0 || num != 4)
+    if (read_json_float_array(reader, info->rotation, 4, &num) != 0 || num != 4)
       return 1;
     info->has_rotation = 1;
   } else if (strcmp(name, "scale") == 0) {
-    if (read_float_vector(reader, info->scale, 3, &num) != 0 || num != 3)
+    if (read_json_float_array(reader, info->scale, 3, &num) != 0 || num != 3)
       return 1;
     info->has_scale = 1;
   } else if (strcmp(name, "translation") == 0) {
-    if (read_float_vector(reader, info->translation, 3, &num) != 0 || num != 3)
+    if (read_json_float_array(reader, info->translation, 3, &num) != 0 || num != 3)
       return 1;
     info->has_translation = 1;
   } else if (strcmp(name, "matrix") == 0) {
-    if (read_float_vector(reader, info->node->matrix, 16, &num) != 0 || num != 16)
+    if (read_json_float_array(reader, info->node->matrix, 16, &num) != 0 || num != 16)
       return 1;
     info->has_matrix = 1;
   } else {
@@ -452,13 +84,14 @@ static int read_node_prop(struct GLTF_READER *reader, const char *name, void *da
   return 0;
 }
 
-static int read_nodes_element(struct GLTF_READER *reader, int index, void *data)
+static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_NODES) {
     debug_log("* ERROR: too many nodes (%d)\n", index);
     return 1;
   }
-  struct GLTF_NODE *node = &reader->gltf.nodes[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_NODE *node = &gltf->nodes[index];
   struct JSON_NODE_INFO info = {
     .has_rotation = 0,
     .has_scale = 0,
@@ -493,7 +126,7 @@ static int read_nodes_element(struct GLTF_READER *reader, int index, void *data)
   return 0;
 }
 
-static int read_buffer_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_buffer_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_BUFFER *buffer = data;
   
@@ -504,18 +137,19 @@ static int read_buffer_prop(struct GLTF_READER *reader, const char *name, void *
   return skip_json_value(reader);
 }
 
-static int read_buffers_element(struct GLTF_READER *reader, int index, void *data)
+static int read_buffers_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_BUFFERS) {
     debug_log("* ERROR: too many buffers (%d)\n", index);
     return 1;
   }
-  struct GLTF_BUFFER *buffer = &reader->gltf.buffers[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_BUFFER *buffer = &gltf->buffers[index];
 
   return read_json_object(reader, read_buffer_prop, buffer);
 }
 
-static int read_buffer_view_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_buffer_view_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_BUFFER_VIEW *buffer_view = data;
   
@@ -535,13 +169,14 @@ static int read_buffer_view_prop(struct GLTF_READER *reader, const char *name, v
   return skip_json_value(reader);
 }
 
-static int read_buffer_views_element(struct GLTF_READER *reader, int index, void *data)
+static int read_buffer_views_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_BUFFER_VIEWS) {
     debug_log("* ERROR: too many buffer views (%d)\n", index);
     return 1;
   }
-  struct GLTF_BUFFER_VIEW *buffer_view = &reader->gltf.buffer_views[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[index];
   buffer_view->byte_offset = 0;
   buffer_view->byte_length = 0;
   buffer_view->target = 0;
@@ -554,7 +189,7 @@ static int read_buffer_views_element(struct GLTF_READER *reader, int index, void
   //return ret;
 }
 
-static int read_sampler_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_sampler_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_SAMPLER *sampler = data;
   
@@ -571,13 +206,14 @@ static int read_sampler_prop(struct GLTF_READER *reader, const char *name, void 
   return skip_json_value(reader);
 }
 
-static int read_samplers_element(struct GLTF_READER *reader, int index, void *data)
+static int read_samplers_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_SAMPLERS) {
     debug_log("* ERROR: too many samplers (%d)\n", index);
     return 1;
   }
-  struct GLTF_SAMPLER *sampler = &reader->gltf.samplers[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_SAMPLER *sampler = &gltf->samplers[index];
   sampler->mag_filter = GLTF_SAMPLER_FILTER_LINEAR;
   sampler->min_filter = GLTF_SAMPLER_FILTER_LINEAR;
   sampler->wrap_s = GLTF_SAMPLER_WRAP_REPEAT;
@@ -586,7 +222,7 @@ static int read_samplers_element(struct GLTF_READER *reader, int index, void *da
   return read_json_object(reader, read_sampler_prop, sampler);
 }
 
-static int read_image_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_image_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_IMAGE *image = data;
   
@@ -613,26 +249,27 @@ static int read_image_prop(struct GLTF_READER *reader, const char *name, void *d
   return skip_json_value(reader);
 }
 
-static int read_images_element(struct GLTF_READER *reader, int index, void *data)
+static int read_images_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_IMAGES) {
     debug_log("* ERROR: too many images (%d)\n", index);
     return 1;
   }
-  struct GLTF_IMAGE *image = &reader->gltf.images[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_IMAGE *image = &gltf->images[index];
   image->buffer_view = 0;
   image->mime_type = 0;
   
   return read_json_object(reader, read_image_prop, image);
 }
 
-static int read_scene_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_scene_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_SCENE *scene = data;
   
   if (strcmp(name, "nodes") == 0) {
     size_t n_nodes;
-    if (read_u16_vector(reader, scene->nodes, GLTF_MAX_SCENE_NODES, &n_nodes) != 0)
+    if (read_json_u16_array(reader, scene->nodes, GLTF_MAX_SCENE_NODES, &n_nodes) != 0)
       return 1;
     scene->n_nodes = n_nodes;
     //debug_log("-> got %u nodes in scene\n", scene->n_nodes);
@@ -643,19 +280,20 @@ static int read_scene_prop(struct GLTF_READER *reader, const char *name, void *d
   return skip_json_value(reader);
 }
 
-static int read_scenes_element(struct GLTF_READER *reader, int index, void *data)
+static int read_scenes_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_SCENES) {
     debug_log("* ERROR: too many scenes (%d)\n", index);
     return 1;
   }
-  struct GLTF_SCENE *scene = &reader->gltf.scenes[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_SCENE *scene = &gltf->scenes[index];
   scene->n_nodes = 0;
   
   return read_json_object(reader, read_scene_prop, scene);
 }
 
-static int read_texture_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_texture_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_TEXTURE *texture = data;
   
@@ -674,20 +312,21 @@ static int read_texture_prop(struct GLTF_READER *reader, const char *name, void 
   return skip_json_value(reader);
 }
 
-static int read_textures_element(struct GLTF_READER *reader, int index, void *data)
+static int read_textures_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_TEXTURES) {
     debug_log("* ERROR: too many textures (%d)\n", index);
     return 1;
   }
-  struct GLTF_TEXTURE *texture = &reader->gltf.textures[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_TEXTURE *texture = &gltf->textures[index];
   texture->sampler = 0;
   texture->source_image = 0;
 
   return read_json_object(reader, read_texture_prop, texture);
 }
 
-static int read_material_texture_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_material_texture_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_MATERIAL_TEXTURE *mat_tex = data;
 
@@ -701,7 +340,7 @@ static int read_material_texture_prop(struct GLTF_READER *reader, const char *na
   return skip_json_value(reader);
 }
 
-static int read_material_pbr_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_material_pbr_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_MATERIAL *material = data;
 
@@ -710,7 +349,7 @@ static int read_material_pbr_prop(struct GLTF_READER *reader, const char *name, 
 
   if (strcmp(name, "baseColorFactor") == 0) {
     size_t num;
-    if (read_float_vector(reader, material->base_color_factor, 4, &num) != 0 || num != 4)
+    if (read_json_float_array(reader, material->base_color_factor, 4, &num) != 0 || num != 4)
       return 1;
     return 0;
   }
@@ -725,7 +364,7 @@ static int read_material_pbr_prop(struct GLTF_READER *reader, const char *name, 
   return skip_json_value(reader);
 }
 
-static int read_material_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_material_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_MATERIAL *material = data;
   
@@ -772,13 +411,14 @@ static void init_material_texture(struct GLTF_MATERIAL_TEXTURE *mat_tex)
   mat_tex->tex_coord = 0;
 }
 
-static int read_materials_element(struct GLTF_READER *reader, int index, void *data)
+static int read_materials_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_MATERIALS) {
     debug_log("* ERROR: too many materials (%d)\n", index);
     return 1;
   }
-  struct GLTF_MATERIAL *material = &reader->gltf.materials[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_MATERIAL *material = &gltf->materials[index];
   init_material_texture(&material->color_tex);
   init_material_texture(&material->normal_tex);
   init_material_texture(&material->occlusion_tex);
@@ -794,7 +434,7 @@ static int read_materials_element(struct GLTF_READER *reader, int index, void *d
   return read_json_object(reader, read_material_prop, material);
 }
 
-static int read_accessor_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_accessor_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_ACCESSOR *accessor = data;
 
@@ -838,13 +478,14 @@ static int read_accessor_prop(struct GLTF_READER *reader, const char *name, void
   return skip_json_value(reader);
 }
 
-static int read_accessors_element(struct GLTF_READER *reader, int index, void *data)
+static int read_accessors_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_ACCESSORS) {
     debug_log("* ERROR: too many accessors (%d)\n", index);
     return 1;
   }
-  struct GLTF_ACCESSOR *accessor = &reader->gltf.accessors[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_ACCESSOR *accessor = &gltf->accessors[index];
   accessor->buffer_view = GLTF_NONE;
   accessor->byte_offset = 0;
   accessor->normalized = 0;
@@ -855,7 +496,7 @@ static int read_accessors_element(struct GLTF_READER *reader, int index, void *d
   return read_json_object(reader, read_accessor_prop, accessor);
 }
 
-static int read_mesh_prim_attr_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_mesh_prim_attr_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_MESH_PRIMITIVE *prim = data;
 
@@ -876,7 +517,7 @@ static int read_mesh_prim_attr_prop(struct GLTF_READER *reader, const char *name
   return read_json_u16(reader, &prim->attribs[attrib_num]);
 }
 
-static int read_mesh_primitive_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_mesh_primitive_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_MESH_PRIMITIVE *prim = data;
 
@@ -896,7 +537,7 @@ static int read_mesh_primitive_prop(struct GLTF_READER *reader, const char *name
   return skip_json_value(reader);
 }
 
-static int read_mesh_primitives_element(struct GLTF_READER *reader, int index, void *data)
+static int read_mesh_primitives_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_MESH_PRIMITIVES) {
     debug_log("* ERROR: too many mesh primitives (%d)\n", index);
@@ -915,7 +556,7 @@ static int read_mesh_primitives_element(struct GLTF_READER *reader, int index, v
   return read_json_object(reader, read_mesh_primitive_prop, prim);
 }
 
-static int read_mesh_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_mesh_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_MESH *mesh = data;
 
@@ -926,19 +567,22 @@ static int read_mesh_prop(struct GLTF_READER *reader, const char *name, void *da
   return skip_json_value(reader);
 }
 
-static int read_meshes_element(struct GLTF_READER *reader, int index, void *data)
+static int read_meshes_element(struct JSON_READER *reader, int index, void *data)
 {
   if (index >= GLTF_MAX_MESHES) {
     debug_log("* ERROR: too many meshes (%d)\n", index);
     return 1;
   }
-  struct GLTF_MESH *mesh = &reader->gltf.meshes[index];
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_MESH *mesh = &gltf->meshes[index];
 
   return read_json_object(reader, read_mesh_prop, mesh);
 }
 
-static int read_main_prop(struct GLTF_READER *reader, const char *name, void *data)
+static int read_main_prop(struct JSON_READER *reader, const char *name, void *data)
 {
+  struct GLTF_DATA *gltf = reader->data;
+
   if (strcmp(name, "asset") == 0)
     return read_asset_object(reader);
   
@@ -949,7 +593,7 @@ static int read_main_prop(struct GLTF_READER *reader, const char *name, void *da
     return read_json_array(reader, read_nodes_element, NULL);
   
   if (strcmp(name, "scene") == 0)
-    return read_json_u16(reader, &reader->gltf.scene);
+    return read_json_u16(reader, &gltf->scene);
   
   if (strcmp(name, "scenes") == 0)
     return read_json_array(reader, read_scenes_element, NULL);
@@ -979,43 +623,43 @@ static int read_main_prop(struct GLTF_READER *reader, const char *name, void *da
   return skip_json_value(reader);
 }
 
-static struct GLTF_READER *new_json_reader(size_t json_len)
+static struct GLTF_DATA *new_gltf_data(size_t json_len)
 {
-  struct GLTF_READER *reader = malloc(sizeof *reader + json_len);
-  if (! reader)
+  struct GLTF_DATA *gltf = malloc(sizeof *gltf + json_len);
+  if (! gltf)
     return NULL;
-  reader->json = reader->json_text;
-  return reader;
+  gltf->json.json = gltf->json_text;
+  gltf->json.data = gltf;
+  return gltf;
 }
 
-void free_gltf_reader(struct GLTF_READER *reader)
+void free_gltf(struct GLTF_DATA *gltf)
 {
-  free(reader);
+  free(gltf);
 }
 
-static struct GLTF_READER *parse_gltf_json(FILE *f, size_t json_len)
+static struct GLTF_DATA *parse_gltf_json_file(FILE *f, size_t json_len)
 {
-  struct GLTF_READER *reader = new_json_reader(json_len+1);
-  if (fread(reader->json, 1, json_len, f) != json_len)
+  struct GLTF_DATA *gltf = new_gltf_data(json_len+1);
+  if (fread(gltf->json_text, 1, json_len, f) != json_len)
     goto err;
-  reader->json[json_len] = '\0';
+  gltf->json_text[json_len] = '\0';
+  gltf->scene = GLTF_NONE;
   
-  reader->gltf.scene = GLTF_NONE;
-  
-  if (read_json_object(reader, read_main_prop, NULL) != 0)
+  if (read_json_object(&gltf->json, read_main_prop, NULL) != 0)
     goto err;
   
-  skip_json_spaces(reader);
-  if (*reader->json != '\0')
+  skip_json_spaces(&gltf->json);
+  if (*gltf->json.json != '\0')
     goto err;
-  return reader;
+  return gltf;
 
  err:
-  free_gltf_reader(reader);
+  free_gltf(gltf);
   return NULL;
 }
 
-struct GLTF_READER *read_gltf(const char *filename)
+struct GLTF_DATA *read_gltf(const char *filename)
 {
   FILE *f = fopen(filename, "rb");
   if (! f)
@@ -1028,11 +672,11 @@ struct GLTF_READER *read_gltf(const char *filename)
   if (fseek(f, 0, SEEK_SET) < 0)
     goto err;
 
-  struct GLTF_READER *reader = parse_gltf_json(f, file_size);
-  if (! reader)
+  struct GLTF_DATA *gltf = parse_gltf_json_file(f, file_size);
+  if (! gltf)
     goto err;
   fclose(f);
-  return reader;
+  return gltf;
 
  err:
   fclose(f);
@@ -1057,9 +701,9 @@ static uint32_t get_u32(void *data, size_t off)
   return p[off] | (p[off+1] << 8) | (p[off+2] << 16) | ((uint32_t)p[off+3] << 24);
 }
 
-int read_glb(struct GLB_READER *glb, const char *filename)
+int open_glb(struct GLB_FILE *glb, const char *filename)
 {
-  struct GLTF_READER *reader = NULL;
+  struct GLTF_DATA *gltf = NULL;
 
   FILE *f = fopen(filename, "rb");
   if (! f)
@@ -1085,21 +729,21 @@ int read_glb(struct GLB_READER *glb, const char *filename)
     if (memcmp(chunk_header + 4, "JSON", 4) == 0) {
       if (chunk_len == 0 || chunk_len > 0x10000)    // sanity check
         goto err;
-      reader = parse_gltf_json(f, chunk_len);
-      if (! reader)
+      gltf = parse_gltf_json_file(f, chunk_len);
+      if (! gltf)
         goto err;
       continue;
     }
 
     // BIN\0 chunk
     if (memcmp(chunk_header + 4, "BIN", 4) == 0) {
-      if (! reader)
+      if (! gltf)
         goto err;
       long data_offset = ftell(f);
       if (data_offset < 0)
         goto err;
       
-      glb->gltf_reader = reader;
+      glb->gltf = gltf;
       glb->file = f;
       glb->data_off = data_offset;
       glb->data_len = chunk_len;
@@ -1113,8 +757,13 @@ int read_glb(struct GLB_READER *glb, const char *filename)
  err:
   if (f)
     fclose(f);
-  if (reader)
-    free_gltf_reader(reader);
+  if (gltf)
+    free_gltf(gltf);
   return 1;
 }
 
+void close_glb(struct GLB_FILE *glb)
+{
+  fclose(glb->file);
+  free(glb->gltf);
+}

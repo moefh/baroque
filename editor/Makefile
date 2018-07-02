@@ -14,7 +14,7 @@ CC = gcc
 CFLAGS = $(OS_CFLAGS) -O2 -Wall -I../include
 LDFLAGS = $(OS_LDFLAGS)
 
-OBJS = main.o editor.o room.o save.o load.o render.o gfx.o debug.o glad.o gl_error.o image.o matrix.o grid.o font.o model.o gltf.o shader.o camera.o
+OBJS = main.o editor.o room.o save.o load.o render.o gfx.o debug.o glad.o gl_error.o image.o matrix.o grid.o font.o model.o gltf.o shader.o camera.o json.o
 LIBS = $(OS_LIBS) -lm
 
 all: editor

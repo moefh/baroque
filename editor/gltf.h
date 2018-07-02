@@ -4,10 +4,21 @@
 #define GLTF_H_FILE
 
 #include <stdint.h>
+#include "json.h"
 
 #define GLTF_MAX_MESH_PRIMITIVES 8
 #define GLTF_MAX_NODE_CHILDREN   32
 #define GLTF_MAX_SCENE_NODES     8
+#define GLTF_MAX_ACCESSORS       64
+#define GLTF_MAX_BUFFERS         16
+#define GLTF_MAX_BUFFER_VIEWS    64
+#define GLTF_MAX_IMAGES          16
+#define GLTF_MAX_MATERIALS       16
+#define GLTF_MAX_MESHES          16
+#define GLTF_MAX_NODES           64
+#define GLTF_MAX_SCENES          8
+#define GLTF_MAX_SAMPLERS        16
+#define GLTF_MAX_TEXTURES        16
 
 #define GLTF_NONE ((uint16_t)0xffff)
 
@@ -147,17 +158,6 @@ struct GLTF_TEXTURE {
   uint16_t source_image;
 };
 
-#define GLTF_MAX_ACCESSORS       64
-#define GLTF_MAX_BUFFERS         16
-#define GLTF_MAX_BUFFER_VIEWS    64
-#define GLTF_MAX_IMAGES          16
-#define GLTF_MAX_MATERIALS       16
-#define GLTF_MAX_MESHES          16
-#define GLTF_MAX_NODES           64
-#define GLTF_MAX_SCENES          8
-#define GLTF_MAX_SAMPLERS        16
-#define GLTF_MAX_TEXTURES        16
-
 struct GLTF_DATA {
   struct GLTF_ACCESSOR    accessors[GLTF_MAX_ACCESSORS];
   struct GLTF_BUFFER      buffers[GLTF_MAX_BUFFERS];
@@ -170,23 +170,22 @@ struct GLTF_DATA {
   struct GLTF_SAMPLER     samplers[GLTF_MAX_SAMPLERS];
   struct GLTF_TEXTURE     textures[GLTF_MAX_TEXTURES];
   uint16_t scene;
-};
 
-struct GLTF_READER {
-  struct GLTF_DATA gltf;
-  char *json;
+  struct JSON_READER json;
   char json_text[];
 };
 
-struct GLB_READER {
-  struct GLTF_READER *gltf_reader;
+struct GLB_FILE {
+  struct GLTF_DATA *gltf;
   FILE *file;
   uint32_t data_off;
   uint32_t data_len;
 };
 
-struct GLTF_READER *read_gltf(const char *filename);
-int read_glb(struct GLB_READER *glb_reader, const char *filename);
-void free_gltf_reader(struct GLTF_READER *reader);
+struct GLTF_DATA *read_gltf(const char *filename);
+void free_gltf(struct GLTF_DATA *gltf);
+
+int open_glb(struct GLB_FILE *glb, const char *filename);
+void close_glb(struct GLB_FILE *glb);
 
 #endif /* GLTF_H_FILE */
