@@ -15,7 +15,7 @@
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
 #else
-#define debug_log(s,...)
+#define debug_log(...)
 #endif
 
 struct MODEL_READER {

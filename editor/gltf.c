@@ -993,7 +993,7 @@ void free_gltf_reader(struct GLTF_READER *reader)
   free(reader);
 }
 
-static struct GLTF_READER *parse_gltf_json(FILE *f, int json_len)
+static struct GLTF_READER *parse_gltf_json(FILE *f, size_t json_len)
 {
   struct GLTF_READER *reader = new_json_reader(json_len+1);
   if (fread(reader->json, 1, json_len, f) != json_len)
