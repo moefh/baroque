@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "camera.h"
 #include "room.h"
+#include "text.h"
 
 #define KEY_MOD_SHIFT   (1<<0)
 #define KEY_MOD_CTRL    (1<<1)
@@ -56,11 +57,7 @@ void editor_handle_key(int key, int press, int mods);
 void editor_handle_char(unsigned int codepoint);
 int process_editor_step(void);
 
-void out_text(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-
 #define EDITOR_MAX_INPUT_LINE_LEN  128
-#define EDITOR_SCREEN_LINES        50
-#define EDITOR_SCREEN_COLS         100
 
 struct EDITOR_INPUT_LINE {
   int active;
@@ -71,7 +68,7 @@ struct EDITOR_INPUT_LINE {
 
 struct EDITOR {
   int quit;
-  const char *text_screen[EDITOR_SCREEN_LINES];
+  const char *text_screen[TEXT_SCREEN_LINES];
   struct EDITOR_INPUT_LINE input;
 
   struct EDITOR_ROOM *selected_room;

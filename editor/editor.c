@@ -20,7 +20,6 @@
 #define DEFAULT_MAP_FILE "data/world.map"
 
 #define MAX_COMMAND_ARGS   32
-#define INPUT_HISTORY_SIZE 64
 
 #define MOUSE_BUTTON_LEFT   0
 #define MOUSE_BUTTON_RIGHT  1
@@ -47,11 +46,6 @@ struct EDITOR_COMMAND {
 };
 
 static const struct EDITOR_COMMAND *get_editor_commands(void);
-
-struct TEXT_SCREEN {
-  char text[EDITOR_SCREEN_LINES*EDITOR_SCREEN_COLS];
-  int cursor_col;
-};
 
 struct MOUSE_ACTION {
   int action_id;
@@ -80,18 +74,11 @@ static const float room_neighbor_color[4] = { 0.5, 0.5, 1.0, 0.75 };
 static const float room_hover_color[4] =    { 1.0, 0.0, 0.0, 0.75 };
 
 static struct MOUSE_ACTION action;
-static struct TEXT_SCREEN screen;
 static struct {
   int argc;
   char *argv[MAX_COMMAND_ARGS];
   char text[EDITOR_MAX_INPUT_LINE_LEN];
 } cmdline;
-static struct {
-  char lines[INPUT_HISTORY_SIZE][EDITOR_MAX_INPUT_LINE_LEN];
-  int last;
-  int size;
-  int last_view;
-} input_history;
 
 static void set_room_neighbor_color(struct EDITOR_ROOM *room, const float *color)
 {
@@ -323,18 +310,6 @@ static int parse_int(const char *str, int *p_num)
   return 0;
 }
 
-static void add_input_history(const char *line)
-{
-  int next = (input_history.last + 1) % INPUT_HISTORY_SIZE;
-  strncpy(input_history.lines[next], line, EDITOR_MAX_INPUT_LINE_LEN);
-  input_history.lines[next][EDITOR_MAX_INPUT_LINE_LEN-1] = '\0';
-
-  if (input_history.size < INPUT_HISTORY_SIZE)
-    input_history.size = next + 1;
-  input_history.last = next;
-  input_history.last_view = next;
-}
-
 static int parse_command_line(const char *command)
 {
   const char *in = command;
@@ -427,47 +402,6 @@ static int autocomplete(char *line, size_t line_size, size_t *p_cursor_pos, cons
   return num_comp;
 }
 
-static void scroll_screen(int lines)
-{
-  if (lines == 0)
-    return;
-  if (lines < 0 || lines >= EDITOR_SCREEN_LINES) {
-    memset(screen.text, 0, sizeof(screen.text));
-    return;
-  }
-  memmove(screen.text, screen.text + EDITOR_SCREEN_COLS*lines, EDITOR_SCREEN_COLS*(EDITOR_SCREEN_LINES-lines));
-  memset(screen.text + EDITOR_SCREEN_COLS*(EDITOR_SCREEN_LINES-lines), 0, EDITOR_SCREEN_COLS*lines);
-}
-
-static void clear_text_screen(void)
-{
-  memset(screen.text, 0, sizeof(screen.text));
-}
-
-void out_text(const char *fmt, ...)
-{
-  static char buf[1024];
-  
-  va_list ap;
-
-  va_start(ap, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, ap);
-  va_end(ap);
-
-  const char *p = buf;
-  while (*p) {
-    if (*p == '\n' || screen.cursor_col >= EDITOR_SCREEN_COLS) {
-      scroll_screen(1);
-      screen.cursor_col = 0;
-      if (*p == '\n') {
-        p++;
-        continue;
-      }
-    }
-    screen.text[(EDITOR_SCREEN_LINES-1)*EDITOR_SCREEN_COLS + screen.cursor_col++] = *p++;
-  }
-}
-
 void init_editor(void)
 {
   editor.selected_room = NULL;
@@ -480,13 +414,11 @@ void init_editor(void)
   vec4_load(editor.grid_color, 0.4, 0.4, 0.4, 1);
   vec3_load(editor.grid_pos, 0, 0, 0);
 
-  memset(screen.text, 0, sizeof(screen.text));
-  for (int i = 0; i < EDITOR_SCREEN_LINES; i++)
-    editor.text_screen[i] = &screen.text[i*EDITOR_SCREEN_COLS];
+  clear_text_screen();
+  for (int i = 0; i < TEXT_SCREEN_LINES; i++)
+    editor.text_screen[i] = &text_screen.text[i*TEXT_SCREEN_COLS];
 
-  input_history.last = -1;
-  input_history.size = 0;
-  input_history.last_view = 0;
+  init_input_history();
   
   out_text("Type /help to get help\n");
 }
