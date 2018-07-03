@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "room.h"
-#include "editor.h"
 #include "matrix.h"
 
 void init_room_list(struct EDITOR_ROOM_LIST *list)
@@ -66,10 +65,12 @@ void list_remove_room(struct EDITOR_ROOM_LIST *list, struct EDITOR_ROOM *room)
       continue;
     
     for (int i = 0; i < p->n_neighbors;) {
-      if (p->neighbors[i] == room)
+      if (p->neighbors[i] == room) {
         memcpy(&p->neighbors[i], &p->neighbors[i+1], sizeof(p->neighbors[0]) * (p->n_neighbors-1-i));
-      else
+        p->n_neighbors--;
+      } else {
         i++;
+      }
     }
   }
 

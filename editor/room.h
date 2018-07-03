@@ -25,7 +25,7 @@ struct EDITOR_ROOM {
   struct EDITOR_ROOM *neighbors[EDITOR_ROOM_MAX_NEIGHBORS];
 
   struct EDITOR_ROOM_DISPLAY_INFO display;
-  void *save_info; // used during save
+  int serialization_index; // used during load/save
 };
 
 struct EDITOR_ROOM_LIST {

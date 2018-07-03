@@ -11,15 +11,10 @@
 
 #include "save.h"
 #include "room.h"
-#include "editor.h"
-
-const unsigned char base64_table[] =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  "abcdefghijklmnopqrstuvwxyz"
-  "0123456789+/";
+#include "text.h"
+#include "base64.h"
 
 struct ROOM_INFO {
-  int index;
   struct EDITOR_ROOM *room;
 };
 
@@ -79,42 +74,12 @@ static void write_string(FILE *f, const char *str, const char *suffix)
     fwrite(suffix, 1, strlen(suffix), f);
 }
 
-void write_base64(FILE *f, void *data, size_t data_len)
-{
-  unsigned char *cur = data;
-  unsigned char *end = (unsigned char *) data + (data_len/3)*3;
-
-  while (cur < end) {
-    fputc(base64_table[cur[0]>>2], f);
-    fputc(base64_table[((cur[0]<<4) & 0x3f) | (cur[1]>>4)], f);
-    fputc(base64_table[((cur[1]<<2) & 0x3f) | (cur[2]>>6)], f);
-    fputc(base64_table[cur[2] & 0x3f], f);
-    cur += 3;
-  }
-
-  switch (3 - data_len % 3) {
-  case 1:
-    fputc(base64_table[cur[0]>>2], f);
-    fputc(base64_table[((cur[0]<<4) & 0x3f) | (cur[1]>>4)], f);
-    fputc(base64_table[((cur[1]<<2) & 0x3f)], f);
-    fputc('=', f);
-    break;
-    
-  case 2:
-    fputc(base64_table[cur[0]>>2], f);
-    fputc(base64_table[((cur[0]<<4) & 0x3f)], f);
-    fputc('=', f);
-    fputc('=', f);
-    break;
-  }
-}
-
 static void write_room_neighbors(struct SAVE_INFO *s, int n_neighbors, struct EDITOR_ROOM **neighbors, const char *suffix)
 {
   fprintf(s->f, "[");
   for (int i = 0; i < n_neighbors; i++) {
-    struct ROOM_INFO *info = neighbors[i]->save_info;
-    fprintf(s->f, " %d%c", info->index, (i+1 == n_neighbors) ? ' ' : ',');
+    //struct ROOM_INFO *info = &s->rooms[neighbors[i]->serialization_index];
+    fprintf(s->f, " %d%c", neighbors[i]->serialization_index, (i+1 == n_neighbors) ? ' ' : ',');
   }
   fprintf(s->f, "]");
 
@@ -122,7 +87,7 @@ static void write_room_neighbors(struct SAVE_INFO *s, int n_neighbors, struct ED
     fwrite(suffix, 1, strlen(suffix), s->f);
 }
 
-static void write_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256], const char *suffix)
+static int write_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256], const char *suffix)
 {
   int x_min, y_min, x_max, y_max;
   x_min = y_min = x_max = y_max = -1;
@@ -146,18 +111,23 @@ static void write_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256], const 
   } else {
     fprintf(s->f, "        \"data\" : [\n");
     for (int y = y_min; y <= y_max; y++) {
-      fprintf(s->f, "          \"");
-      write_base64(s->f, &tiles[y][x_min], (x_max-x_min+1)*sizeof(uint16_t));
-      fprintf(s->f, "\"%s\n", (y == y_max) ? "" : ",");
+      // base64 encoded max string size: 4/3 * (256 u16), rounded up, plus '\0'
+      char tiles_data_b64[(256 * sizeof(uint16_t) * 4 + 1) / 3 + 1];
+      if (encode_base64(tiles_data_b64, sizeof(tiles_data_b64), &tiles[y][x_min], (x_max-x_min+1)*sizeof(uint16_t)) != 0) {
+        out_text("** ERROR encoding tiles in base64\n");
+        return 1;
+      }
+      fprintf(s->f, "          \"%s\"%s\n", tiles_data_b64, (y == y_max) ? "" : ",");
     }
     fprintf(s->f, "        ]\n");
   }
   fprintf(s->f, "      }");
   if (suffix)
     fwrite(suffix, 1, strlen(suffix), s->f);
+  return 0;
 }
 
-static int save_room(struct SAVE_INFO *s, struct ROOM_INFO *info)
+static int write_room(struct SAVE_INFO *s, struct ROOM_INFO *info)
 {
   struct EDITOR_ROOM *room = info->room;
     
@@ -173,18 +143,20 @@ static int save_room(struct SAVE_INFO *s, struct ROOM_INFO *info)
   write_room_neighbors(s, room->n_neighbors, room->neighbors, ",\n");
   
   fprintf(s->f, "      \"tiles\" : ");
-  write_room_tiles(s, room->tiles, "\n");
+  if (write_room_tiles(s, room->tiles, "\n") != 0)
+    return 1;
   
   fprintf(s->f, "    }");
   return 0;
 }
 
-static int save_rooms(struct SAVE_INFO *s)
+static int write_main_object(struct SAVE_INFO *s)
 {
   fprintf(s->f, "{\n");
+  fprintf(s->f, "  \"version\" : \"0.1\",\n");
   fprintf(s->f, "  \"rooms\" : [\n");
   for (int i = 0; i < s->n_rooms; i++) {
-    if (save_room(s, &s->rooms[i]) != 0)
+    if (write_room(s, &s->rooms[i]) != 0)
       return 1;
     if (i+1 < s->n_rooms)
       fprintf(s->f, ",");
@@ -209,8 +181,7 @@ static struct ROOM_INFO *create_room_info(struct EDITOR_ROOM_LIST *rooms, int *p
   for (struct EDITOR_ROOM *room = rooms->list; room != NULL; room = room->next) {
     struct ROOM_INFO *info = &room_info[--room_index];
     info->room = room;
-    info->index = room_index;
-    room->save_info = info;
+    room->serialization_index = room_index;
   }
 
   *p_n_rooms = n_rooms;
@@ -254,7 +225,7 @@ int save_map_rooms(const char *filename, struct EDITOR_ROOM_LIST *rooms)
   if (! save_info.rooms)
     goto err;
   
-  if (save_rooms(&save_info) != 0) {
+  if (write_main_object(&save_info) != 0) {
     out_text("** ERROR saving map\n");
     goto err;
   }
