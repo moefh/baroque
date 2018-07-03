@@ -69,7 +69,7 @@ struct MOUSE_ACTION {
 struct EDITOR editor;
 
 static const float room_normal_color[4] =   { 1.0, 1.0, 1.0, 0.25 };
-static const float room_selected_color[4] = { 1.0, 1.0, 1.0, 0.80 };
+static const float room_selected_color[4] = { 1.0, 1.0, 1.0, 0.95 };
 static const float room_neighbor_color[4] = { 0.5, 0.5, 1.0, 0.75 };
 static const float room_hover_color[4] =    { 1.0, 0.0, 0.0, 0.75 };
 
@@ -106,6 +106,8 @@ struct EDITOR_ROOM *get_room_at_screen_pos(int screen_x, int screen_y)
   get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
   
   // calculate click = intersection of line (vec+pos) with plane y=0
+  if (fabs(vec[1]) < 0.00001)
+    return NULL;
   float alpha = -pos[1] / vec[1];
   float click[3] = {
     alpha*vec[0] + pos[0],
@@ -505,7 +507,7 @@ void editor_handle_cursor_pos(double x, double y)
 
   if (action.action_id == MOUSE_ACTION_SEL_NEIGHBOR) {
     struct EDITOR_ROOM *sel = get_room_at_screen_pos(action.mouse_x, action.mouse_y);
-    if (sel != action.hover_room) {
+    if (sel && sel != action.hover_room) {
       if (action.hover_room)
         vec4_copy(action.hover_room->display.color, action.hover_room_save_color);
       if (sel) {
@@ -999,6 +1001,27 @@ static void cmd_info(const char *line, int argc, char **argv)
   out_text("  center=(%+f,%+f,%+f)\n", editor.camera.center[0], editor.camera.center[1], editor.camera.center[2]);
 }
 
+static void cmd_gfxinfo(const char *line, int argc, char **argv)
+{
+  int n_meshes = 0;
+  for (int i = 0; i < NUM_GFX_MESHES; i++) {
+    if (gfx_meshes[i].use_count) {
+      out_text("mesh[%d]: %d users\n", i, gfx_meshes[i].use_count);
+      n_meshes++;
+    }
+  }
+
+  int n_tex = 0;
+  for (int i = 0; i < NUM_GFX_TEXTURES; i++) {
+    if (gfx_textures[i].use_count) {
+      out_text("tex[%d]: %d users\n", i, gfx_textures[i].use_count);
+      n_tex++;
+    }
+  }
+
+  out_text("%d meshes, %d textures used\n", n_meshes, n_tex);
+}
+
 static void cmd_help(const char *line, int argc, char **argv)
 {
   const struct EDITOR_COMMAND *commands = get_editor_commands();
@@ -1066,8 +1089,9 @@ static const struct EDITOR_COMMAND commands[] = {
   { "wipe",     cmd_wipe,     "Wipe tiles of selected room" }, 
   { "history",  cmd_history,  "Show command history" }, 
   { "info",     cmd_info,     "Get camera info" },
+  { "gfxinfo",  cmd_gfxinfo,  "Show gfx info" },
   { "help",     cmd_help,     "Show command list" },
-  { "pleh",     cmd_pleh,     NULL },
+  { "pleh",     cmd_pleh,     "pleh sdrawkcab wohS" },
   { NULL }
 };
 
