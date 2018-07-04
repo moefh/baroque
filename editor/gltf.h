@@ -100,6 +100,7 @@ struct GLTF_BUFFER_VIEW {
 struct GLTF_IMAGE {
   uint16_t buffer_view;
   uint16_t mime_type;
+  char name[64];
 };
 
 struct GLTF_MATERIAL_TEXTURE {

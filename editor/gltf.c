@@ -244,6 +244,9 @@ static int read_image_prop(struct JSON_READER *reader, const char *name, void *d
     debug_log("* ERROR: invalid image mime type: '%s'\n", mime_type);
     return 1;
   }
+
+  if (strcmp(name, "name") == 0)
+    return read_json_string(reader, image->name, sizeof(image->name));
   
   debug_log("-> skipping 'image.%s'\n", name);
   return skip_json_value(reader);
@@ -259,6 +262,7 @@ static int read_images_element(struct JSON_READER *reader, int index, void *data
   struct GLTF_IMAGE *image = &gltf->images[index];
   image->buffer_view = 0;
   image->mime_type = 0;
+  image->name[0] = '\0';
   
   return read_json_object(reader, read_image_prop, image);
 }

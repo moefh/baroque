@@ -24,6 +24,7 @@ struct MODEL_READER {
   FILE *file;
   uint32_t data_off;
   uint32_t data_len;
+  uint32_t read_flags;
   uint16_t converted_textures[GLTF_MAX_TEXTURES];  // converted_textures[gltf_texture_index] = model_texture_index
 };
 
@@ -66,18 +67,32 @@ static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, u
 
   debug_log("  -> loading image from data offset %d, size %d\n", buffer_view->byte_offset, buffer_view->byte_length);
   
-  if (set_file_pos(reader, buffer_view->byte_offset) != 0)
-    return 1;
-
   uint16_t model_texture_index = reader->model->n_textures;
   struct MODEL_TEXTURE *model_tex = &reader->model->textures[model_texture_index];
-  int width, height, n_chan;
-  model_tex->data = stbi_load_from_file(reader->file, &width, &height, &n_chan, 0);
-  if (! model_tex->data)
-    return 1;
-  model_tex->width = width;
-  model_tex->height = width;
-  model_tex->n_chan = n_chan;
+
+  if (reader->read_flags & MODEL_FLAGS_IMAGE_REFS) {
+    size_t image_name_len = strlen(image->name) + 1;
+    if (image_name_len > 255)
+      return 1;
+    model_tex->data = malloc(image_name_len);
+    if (! model_tex->data)
+      return 1;
+    memcpy(model_tex->data, image->name, image_name_len);
+    model_tex->width = reader->data_off + buffer_view->byte_offset;
+    model_tex->height = buffer_view->byte_length;
+    model_tex->n_chan = 0;
+  } else {
+    if (set_file_pos(reader, buffer_view->byte_offset) != 0)
+      return 1;
+    
+    int width, height, n_chan;
+    model_tex->data = stbi_load_from_file(reader->file, &width, &height, &n_chan, 0);
+    if (! model_tex->data)
+      return 1;
+    model_tex->width = width;
+    model_tex->height = width;
+    model_tex->n_chan = n_chan;
+  }
 
   debug_log("  -> added texture %d: %dx%d %d channels\n", model_texture_index, width, height, n_chan);
   
@@ -350,7 +365,7 @@ static void init_model(struct MODEL *model)
   model->n_textures = 0;
 }
 
-int read_glb_model(struct MODEL *model, const char *filename)
+int read_glb_model(struct MODEL *model, const char *filename, uint32_t flags)
 {
   struct GLB_FILE glb;
   if (open_glb(&glb, filename) != 0)
@@ -363,6 +378,7 @@ int read_glb_model(struct MODEL *model, const char *filename)
     .file = glb.file,
     .data_off = glb.data_off,
     .data_len = glb.data_len,
+    .read_flags = flags,
   };
   for (int i = 0; i < GLTF_MAX_TEXTURES; i++)
     reader.converted_textures[i] = MODEL_TEXTURE_NONE;

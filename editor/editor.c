@@ -159,7 +159,7 @@ static int load_room_gfx(struct EDITOR_ROOM *room)
   snprintf(filename, sizeof(filename), "data/%s.glb", room->name);
   
   struct MODEL model;
-  if (read_glb_model(&model, filename) != 0) {
+  if (read_glb_model(&model, filename, 0) != 0) {
     out_text("** ERROR: can't read model from '%s'\n", filename);
     return 1;
   }

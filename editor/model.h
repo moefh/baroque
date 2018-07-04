@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#define MODEL_FLAGS_IMAGE_REFS    (1<<0)
+
 #define MODEL_TEXTURE_NONE 0xffff
 
 #define MODEL_MAX_TEXTURES 16
@@ -52,7 +54,7 @@ struct MODEL {
 };
 
 struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t ind_type, uint32_t ind_size, uint32_t ind_count);
-int read_glb_model(struct MODEL *model, const char *filename);
+int read_glb_model(struct MODEL *model, const char *filename, uint32_t flags);
 void free_model(struct MODEL *model);
 
 #endif /* MODEL_H_FILE */
