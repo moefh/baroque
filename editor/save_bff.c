@@ -280,7 +280,7 @@ static int write_bff_room(struct SAVE_INFO *s, struct ROOM_INFO *room_info)
 {
   struct EDITOR_ROOM *room = room_info->room;
   
-  printf("-> writing room %d\n", room->serialization_index);
+  printf("-> writing room %d (%s)\n", room->serialization_index, room->name);
 
   room_info->file_offset = s->cur_file_offset;
 
@@ -321,8 +321,6 @@ static int write_bff_room(struct SAVE_INFO *s, struct ROOM_INFO *room_info)
 
 static int write_bff_image(struct SAVE_INFO *s, struct IMAGE_INFO *image)
 {
-  printf("-> writing image %d\n", image->index);
-
   char filename[256];
   snprintf(filename, sizeof(filename), "data/%s.glb", image->room_info->room->name);
   
@@ -337,6 +335,7 @@ static int write_bff_image(struct SAVE_INFO *s, struct IMAGE_INFO *image)
     return 1;
   }
   struct MODEL_TEXTURE *tex = &model.textures[image->tex_index];
+  printf("-> writing image %d (%s)\n", image->index, (char*)tex->data);
   uint32_t image_offset = tex->width;
   uint32_t image_length = tex->height;
   free_model(&model);

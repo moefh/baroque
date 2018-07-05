@@ -736,6 +736,10 @@ void editor_handle_key(int key, int press, int mods)
       if (! sel)
         sel = editor.rooms.list;
       select_room(sel);
+      if (sel) {
+        vec3_copy(editor.camera.center, sel->pos);
+        vec3_copy(editor.grid_pos, editor.camera.center);
+      }
     }
     break;
     

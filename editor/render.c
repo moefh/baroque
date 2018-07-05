@@ -68,8 +68,6 @@ static struct GFX_MESH *font_mesh;
 static float text_scale[2];
 static float text_color[4];
 
-static void render_format(float x, float y, float size, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
-
 static int load_shader(void)
 {
   // model
@@ -205,11 +203,11 @@ static void update_grid_tiles_texture(struct EDITOR_ROOM *room)
   unsigned char *out = grid_tiles_texture_data;
   for (int y = 0; y < 256; y++) {
     for (int x = 0; x < 256; x++) {
-      unsigned char color = ((room->tiles[y][x] & 0xff) == 0) ? 0 : 0xff;
-      *out++ = color;
-      *out++ = color;
-      *out++ = color;
-      *out++ = color/2;
+      unsigned char color = ((room->tiles[y][x] & 0xff) == 0) ? 0 : 1;
+      *out++ = color * 0x80;
+      *out++ = color * 0x80;
+      *out++ = color * 0x80;
+      *out++ = color * 0x80;
     }
   }
   gfx_update_texture(grid_tiles_mesh->texture, 0, 0, 256, 256, grid_tiles_texture_data, 4);
@@ -260,10 +258,10 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
 }
 
-static void render_grid(struct GFX_MESH *mesh, float *mat_view_projection, float *pos)
+static void render_grid(struct GFX_MESH *mesh, float *mat_view_projection, float *pos, int selected)
 {
   float mat_model[16];
-  mat4_load_translation(mat_model, pos[0], pos[1], pos[2]);
+  mat4_load_translation(mat_model, pos[0], pos[1]+(selected) ? 0.01 : -0.01, pos[2]);
   
   float mat_model_view_projection[16];
   mat4_mul(mat_model_view_projection, mat_view_projection, mat_model);
@@ -355,7 +353,8 @@ static void render_text(float x, float y, float size, const char *text, size_t l
   }
 }
 
-static void render_format(float x, float y, float size, const char *fmt, ...)
+static void render_textf(float x, float y, float size, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+static void render_textf(float x, float y, float size, const char *fmt, ...)
 {
   static char buf[1024];
   
@@ -386,26 +385,8 @@ void render_screen(void)
   float mat_view_projection[16];
   mat4_mul(mat_view_projection, mat_projection, mat_view);
 
-  //glEnable(GL_DEPTH_TEST);
-
-  // grids
-  if (editor.selected_room) {
-    struct EDITOR_ROOM *room = editor.selected_room;
-
-    GL_CHECK(glUseProgram(grid_shader.id));
-    float color[4];
-    for (int i = 0; i < room->n_neighbors; i++) {
-      vec4_copy(color, room->neighbors[i]->display.color);
-      color[3] *= 0.5;
-      GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, color));
-      render_grid(grid_mesh, mat_view_projection, room->neighbors[i]->pos);
-    }
-    vec4_copy(color, room->display.color);
-    color[3] *= 0.5;
-    GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, color));
-    render_grid(grid_mesh, mat_view_projection, room->pos);
-  }
-
+  glEnable(GL_DEPTH_TEST);
+  
   // meshes
   GL_CHECK(glUseProgram(shader.id));
   GL_CHECK(glUniform1i(shader.uni_tex1, 0));
@@ -416,6 +397,28 @@ void render_screen(void)
       render_mesh(&gfx_meshes[i], mat_view_projection, mat_view);
   }
 
+  //glDisable(GL_DEPTH_TEST);
+  
+  // grids
+  if (editor.selected_room) {
+    struct EDITOR_ROOM *room = editor.selected_room;
+
+    GL_CHECK(glUseProgram(grid_shader.id));
+    float color[4];
+    for (int i = 0; i < room->n_neighbors; i++) {
+      vec4_copy(color, room->neighbors[i]->display.color);
+      color[3] *= 0.2;
+      GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, color));
+      render_grid(grid_mesh, mat_view_projection, room->neighbors[i]->pos, 0);
+    }
+    vec4_copy(color, room->display.color);
+    color[3] *= 0.3;
+    GL_CHECK(glUniform4fv(grid_shader.uni_color, 1, color));
+    render_grid(grid_mesh, mat_view_projection, room->pos, 1);
+  }
+
+  glDisable(GL_DEPTH_TEST);
+  
   // grid tiles
   if (editor.selected_room) {
     struct EDITOR_ROOM *room = editor.selected_room;
@@ -427,24 +430,24 @@ void render_screen(void)
     GL_CHECK(glUseProgram(grid_tiles_shader.id));
     render_grid_tiles(grid_tiles_mesh, mat_view_projection, room->pos);
   }
-  
-  //glDisable(GL_DEPTH_TEST);
+
+  // text
   GL_CHECK(glUseProgram(font_shader.id));
   GL_CHECK(glUniform1i(font_shader.uni_tex1, 0));
   if (editor.selected_room) {
     struct EDITOR_ROOM *room = editor.selected_room;
     set_text_color(1, 1, 1, 1);
-    render_format(0, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f) %s",
+    render_textf(0, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f) %s",
                   room->pos[0],
                   room->pos[1],
                   room->pos[2],
                   room->name);
     set_text_color(0.5, 0.5, 1, 1);
     for (int i = 0; i < room->n_neighbors; i++)
-      render_format(0, 1+i, 0.75, "+ %s", room->neighbors[i]->name);
+      render_textf(0, 1+i, 0.75, "+ %s", room->neighbors[i]->name);
   }
   set_text_color(1, 1, 1, 0.75);
-  render_format(120, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f)",
+  render_textf(120, 0, 0.75, "(%+7.2f,%+7.2f,%+7.2f)",
                 editor.camera.center[0],
                 editor.camera.center[1],
                 editor.camera.center[2]);
