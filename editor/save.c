@@ -87,6 +87,12 @@ static void write_room_neighbors(struct SAVE_INFO *s, int n_neighbors, struct ED
     fwrite(suffix, 1, strlen(suffix), s->f);
 }
 
+static void put_u16(unsigned char *p, uint16_t n)
+{
+  p[0] = n & 0xff;
+  p[1] = (n >> 8) & 0xff;
+}
+
 static int write_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256], const char *suffix)
 {
   int x_min, y_min, x_max, y_max;
@@ -111,9 +117,13 @@ static int write_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256], const c
   } else {
     fprintf(s->f, "        \"data\" : [\n");
     for (int y = y_min; y <= y_max; y++) {
+      unsigned char tiles_data[2*256];
+      for (int x = 0; x < x_max-x_min+1; x++)
+        put_u16(&tiles_data[2*x], tiles[y][x_min + x]);
+      
       // base64 encoded max string size: 4/3 * (256 u16), rounded up, plus '\0'
       char tiles_data_b64[(256 * sizeof(uint16_t) * 4 + 1) / 3 + 1];
-      if (encode_base64(tiles_data_b64, sizeof(tiles_data_b64), &tiles[y][x_min], (x_max-x_min+1)*sizeof(uint16_t)) != 0) {
+      if (encode_base64(tiles_data_b64, sizeof(tiles_data_b64), tiles_data, (x_max-x_min+1)*sizeof(uint16_t)) != 0) {
         out_text("** ERROR encoding tiles in base64\n");
         return 1;
       }

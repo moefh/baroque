@@ -16,7 +16,7 @@ struct ROOM_INFO {
   int n_neighbors;
   uint16_t neighbor_ids[EDITOR_ROOM_MAX_NEIGHBORS];
   uint16_t tiles_pos[2];
-  int tiles_data_width;
+  int tiles_size_x;
 };
 
 struct LOAD_INFO {
@@ -45,7 +45,12 @@ static void init_room_info(struct ROOM_INFO *room_info, struct EDITOR_ROOM *room
   room_info->n_neighbors = 0;
   room_info->tiles_pos[0] = 0;
   room_info->tiles_pos[1] = 0;
-  room_info->tiles_data_width = 0;
+  room_info->tiles_size_x = 0;
+}
+
+static uint16_t get_u16(unsigned char *p)
+{
+  return p[0] | p[1] << 8;
 }
 
 static int read_tiles_data(struct JSON_READER *reader, int index, void *p)
@@ -65,26 +70,31 @@ static int read_tiles_data(struct JSON_READER *reader, int index, void *p)
   if (read_json_string(reader, tiles_data_b64, sizeof(tiles_data_b64)) != 0)
     return 1;
 
-  uint16_t tiles_data[256];
-  size_t tiles_data_width;
-  if (decode_base64(tiles_data, sizeof(tiles_data), &tiles_data_width, tiles_data_b64) != 0) {
+  unsigned char tiles_data[2*256];
+  size_t tiles_data_size;
+  if (decode_base64(tiles_data, sizeof(tiles_data), &tiles_data_size, tiles_data_b64) != 0) {
     out_text("** ERROR: bad base64 tiles\n");
     return 1;
   }
-  tiles_data_width /= sizeof(uint16_t);
-  if (tiles_pos_x + tiles_data_width >= 256) {
-    out_text("** ERROR: tile width too large\n");
+  if (tiles_data_size % sizeof(uint16_t)) {
+    out_text("** ERROR: invalid tile data\n");
+    return 1;
+  }
+  int tiles_size_x = (int) (tiles_data_size / sizeof(uint16_t));
+  if (tiles_pos_x + tiles_size_x >= 256) {
+    out_text("** ERROR: too many tiles\n");
     return 1;
   }
   
   // first line determines the length of all subsequent lines
   if (index == 0) {
-    room_info->tiles_data_width = tiles_data_width;
-  } else if (room_info->tiles_data_width != tiles_data_width) {
-    out_text("** ERROR: inconsistent tile data size\n");
+    room_info->tiles_size_x = tiles_size_x;
+  } else if (room_info->tiles_size_x != tiles_size_x) {
+    out_text("** ERROR: inconsistent tiles size\n");
     return 1;
   }
-  memcpy(&room->tiles[tiles_pos_y][tiles_pos_x], tiles_data, tiles_data_width*sizeof(uint16_t));
+  for (int i = 0; i < tiles_size_x; i++)
+    room->tiles[tiles_pos_y][tiles_pos_x + i] = get_u16(&tiles_data[2*i]);
   return 0;
 }
 
@@ -199,6 +209,10 @@ static int fix_room_neighbors(struct LOAD_INFO *info)
 
     room->n_neighbors = room_info->n_neighbors;
     for (int i = 0; i < room_info->n_neighbors; i++) {
+      if (room_info->neighbor_ids[i] < 0 || room_info->neighbor_ids[i] >= info->n_rooms) {
+        out_text("** ERROR: room %d has invalid neighbor %d\n", room_index, room_info->neighbor_ids[i]);
+        return 1;
+      }
       room->neighbors[i] = info->rooms_info[room_info->neighbor_ids[i]].room;
     }
   }
