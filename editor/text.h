@@ -31,4 +31,24 @@ void add_input_history(const char *line);
 extern struct TEXT_SCREEN text_screen;
 extern struct INPUT_HISTORY input_history;
 
+static inline void out_mat4(const char *label, float *mat)
+{
+  out_text("%s:\n", label);
+  for (int i = 0; i < 16; i++) {
+    out_text("  %8.5f", mat[i]);
+    if (i % 4 == 3)
+      out_text("\n");
+  }
+}
+
+static inline void out_vec4(const char *label, float *vec)
+{
+  out_text("%s: %+f, %+f, %+f, %+f\n", label, vec[0], vec[1], vec[2], vec[3]);
+}
+
+static inline void out_vec3(const char *label, float *vec)
+{
+  out_text("%s: %+f, %+f, %+f\n", label, vec[0], vec[1], vec[2]);
+}
+
 #endif /* TEXT_H_FILE */

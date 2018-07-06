@@ -49,11 +49,6 @@ struct GFX_GRID_TILES_SHADER {
   GLint uni_mat_model_view_projection;
 };
 
-float projection_aspect = 1.0;
-float projection_fovy = 50*M_PI/180;
-int viewport_width;
-int viewport_height;
-
 static struct GFX_SHADER shader;
 static struct GFX_FONT_SHADER font_shader;
 static struct GFX_GRID_SHADER grid_shader;
@@ -188,13 +183,11 @@ int render_setup(int width, int height)
 void render_set_viewport(int width, int height)
 {
   glViewport(0, 0, width, height);
-  projection_aspect = (float) width / height;
-  viewport_width = width;
-  viewport_height = height;
+  set_camera_viewport(&editor.camera, width, height);
 
   float text_base_size = 1.0 / 28.0;
   text_scale[0] = text_base_size * 0.5;
-  text_scale[1] = text_base_size * projection_aspect;
+  text_scale[1] = text_base_size * width / height;
 }
 
 static void update_grid_tiles_texture(struct EDITOR_ROOM *room)
@@ -377,10 +370,10 @@ void render_screen(void)
   float light_pos[3] = { 10.0, 10.0, 0.0 };
   
   float mat_projection[16];
-  mat4_inf_perspective(mat_projection, projection_aspect, projection_fovy, 0.1);
+  get_camera_projection_matrix(&editor.camera, mat_projection);
 
   float mat_view[16];
-  get_camera_matrix(&editor.camera, mat_view);
+  get_camera_view_matrix(&editor.camera, mat_view);
   
   float mat_view_projection[16];
   mat4_mul(mat_view_projection, mat_projection, mat_view);

@@ -111,7 +111,7 @@ int main(void)
   glfwGetFramebufferSize(window, &width, &height);
   if (render_setup(width, height) != 0)
     goto err;
-  init_editor();
+  init_editor(width, height);
   
   debug("- Running main loop...\n");
   while (1) {

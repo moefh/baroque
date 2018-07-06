@@ -49,7 +49,7 @@
 #define KEY_KP_ADD      334
 #define KEY_KP_ENTER    335
  
-void init_editor(void);
+void init_editor(int width, int height);
 void editor_handle_cursor_pos(double x, double y);
 void editor_handle_mouse_button(int button, int press, int mods);
 void editor_handle_mouse_scroll(double x, double y);

@@ -103,7 +103,7 @@ static void select_room(struct EDITOR_ROOM *room)
 struct EDITOR_ROOM *get_room_at_screen_pos(int screen_x, int screen_y)
 {
   float pos[3], vec[3];
-  get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
+  get_screen_ray(&editor.camera, pos, vec, screen_x, screen_y);
   
   // calculate click = intersection of line (vec+pos) with plane y=0
   if (fabs(vec[1]) < 0.00001)
@@ -277,7 +277,7 @@ static void end_mouse_action(void)
 static int get_room_tile_at_screen_pos(struct EDITOR_ROOM *room, int screen_x, int screen_y, int *p_tile_x, int *p_tile_y)
 {
   float pos[3], vec[3];
-  get_screen_ray(&editor.camera, pos, vec, projection_fovy, screen_x, screen_y, viewport_width, viewport_height);
+  get_screen_ray(&editor.camera, pos, vec, screen_x, screen_y);
   
   // calculate click = intersection of line (t*vec+pos) with plane y=room->pos[1]
   float room_normal[3] = { 0, 1, 0 };
@@ -404,12 +404,12 @@ static int autocomplete(char *line, size_t line_size, size_t *p_cursor_pos, cons
   return num_comp;
 }
 
-void init_editor(void)
+void init_editor(int width, int height)
 {
   editor.selected_room = NULL;
   init_room_list(&editor.rooms);
   
-  init_camera(&editor.camera);
+  init_camera(&editor.camera, width, height);
   editor.camera.distance = 25;
   editor.input.active = 0;
 
@@ -450,7 +450,7 @@ void editor_handle_cursor_pos(double x, double y)
     float dy = y - action.start_y;
 
     float front[3], left[3];
-    get_camera_vectors(&editor.camera, front, left);
+    get_camera_vectors(&editor.camera, front, left, NULL, NULL);
     front[1] = 0;
     left[1] = 0;
     vec3_normalize(front);
@@ -477,8 +477,7 @@ void editor_handle_cursor_pos(double x, double y)
     float dy = y - action.start_y;
 
     float front[3], left[3], up[3];
-    get_camera_vectors(&editor.camera, front, left);
-    vec3_cross(up, front, left);
+    get_camera_vectors(&editor.camera, front, left, up, NULL);
     if (! (action.allow_axis_flags & MOUSE_ACTION_ALLOW_AXIS_X)) {
       up[0] = 0;
       left[0] = 0;
@@ -816,7 +815,7 @@ void editor_handle_key(int key, int press, int mods)
     if ((mods & KEY_MOD_CTRL) && action.action_id == MOUSE_ACTION_NONE)
       load_map(DEFAULT_MAP_FILE);
     break;
-    
+
   default:
     //if (! editor.input.active)
     //  out_text("key: %d (%c)\n", key, (key >= 32 && key < 127) ? key : '-');
