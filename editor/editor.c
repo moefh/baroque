@@ -294,8 +294,8 @@ static int get_room_tile_at_screen_pos(struct EDITOR_ROOM *room, int screen_x, i
     t*vec[2] + pos[2],
   };
 
-  *p_tile_x = round(4 * (click[0] - room->pos[0]));
-  *p_tile_y = round(4 * (click[2] - room->pos[2]));
+  *p_tile_x = floor(4 * (click[0] - room->pos[0]));
+  *p_tile_y = floor(4 * (click[2] - room->pos[2]));
   return 0;
 }
 
