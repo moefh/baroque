@@ -3,6 +3,8 @@
 #ifndef TEXT_H_FILE
 #define TEXT_H_FILE
 
+#include "defs.h"
+
 #define TEXT_SCREEN_LINES 50
 #define TEXT_SCREEN_COLS  100
 

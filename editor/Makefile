@@ -1,9 +1,9 @@
 
 ifeq ($(OS),Windows_NT)
-OS_CFLAGS = -I$(DEVROOT)/include
+OS_CFLAGS = -I$(GLFW_HOME)/include
 #OS_LDFLAGS = -w -Wl,-subsystem,windows
 OS_LDFLAGS =
-OS_LIBS = -L$(DEVROOT)/lib -lglfw3 -lgdi32 -lopengl32
+OS_LIBS = -L$(GLFW_HOME)/lib-mingw-w64 -lglfw3 -lgdi32 -lopengl32
 else
 OS_CFLAGS = -g -fsanitize=address -fsanitize=undefined
 OS_LDFLAGS = -g -fsanitize=address -fsanitize=undefined
@@ -23,7 +23,7 @@ BUILDER_LIBS = -lm
 all: editor builder
 
 clean:
-	-rm -f *.o editor editor.exe out.txt
+	-rm -f *.o editor editor.exe builder.exe out.txt
 
 editor: $(EDITOR_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(EDITOR_OBJS) $(EDITOR_LIBS)

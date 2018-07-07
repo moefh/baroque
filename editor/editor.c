@@ -1078,6 +1078,13 @@ static void cmd_keys(const char *line, int argc, char **argv)
   out_text("SCROLL    Zoom\n");
 }
 
+static void cmd_sysinfo(const char *line, int argc, char **argv)
+{
+  out_text("Built with ");
+  out_text(COMPILER_VERSION_FORMAT);
+  out_text(" on %s %s\n", __DATE__, __TIME__);
+}
+
 static const struct EDITOR_COMMAND commands[] = {
   { "save",     cmd_save,     "Save map" },
   { "load",     cmd_load,     "Load map" },
@@ -1094,6 +1101,7 @@ static const struct EDITOR_COMMAND commands[] = {
   { "info",     cmd_info,     "Get camera info" },
   { "gfxinfo",  cmd_gfxinfo,  "Show gfx info" },
   { "help",     cmd_help,     "Show command list" },
+  { "sysinfo",  cmd_sysinfo,  "Show system information" },
   { "pleh",     cmd_pleh,     "pleh sdrawkcab wohS" },
   { NULL }
 };
