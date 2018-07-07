@@ -20,7 +20,7 @@ for X, OpenGL, glfw, etc) then go to this project's directory and:
 
 ### Windows with MinGW-64
 
-1. Download the GLFW binaries [GLFW](http://www.glfw.org/), and unpack
+1. Download the GLFW binaries from [GLFW](http://www.glfw.org/), and unpack
 them somewhere. The next step assumes this directory is `%HOME%`
 (usually `c:\users\USERNAME`), so the zip extraction created the
 directory `%HOME%\glfw-X.Y.Z.bin.WIN64`.
@@ -40,7 +40,7 @@ that contains the generated `.exe` (i.e., `src` or `editor`).
 
 ### Windows with Visual Studio
 
-1. Download the GLFW binaries [GLFW](http://www.glfw.org/), and unpack
+1. Download the GLFW binaries from [GLFW](http://www.glfw.org/), and unpack
 them somewhere. The next step assumes this directory is `%HOME%`
 (usually `c:\users\USERNAME`), so the zip extraction created the
 directory `%HOME%\glfw-X.Y.Z.bin.WIN64`.
