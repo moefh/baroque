@@ -52,7 +52,5 @@ struct MODEL {
 };
 
 struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t ind_type, uint32_t ind_size, uint32_t ind_count);
-int read_glb_model(struct MODEL *model, const char *filename);
-void free_model(struct MODEL *model);
 
 #endif /* MODEL_H_FILE */

@@ -1,5 +1,6 @@
 /* game.c */
 
+#include <stddef.h>
 #include <math.h>
 
 #include "game.h"
@@ -8,11 +9,9 @@
 #include "camera.h"
 #include "matrix.h"
 
-float projection_aspect;
-float projection_fov = 75*M_PI/180;
+struct GAME game;
 struct GAMEPAD gamepad;
 struct CAMERA camera;
-struct FPS_COUNTER fps_counter;
 struct CREATURE creatures[MAX_CREATURES];
 
 #define MOVE_SPEED (1.0 / 20.0)
@@ -58,6 +57,19 @@ void get_light_pos(float *restrict light_pos)
   light_pos[2] = camera_pos[2] + camera_dir[2];
 }
 
+void handle_game_key(int key, int press, int mods)
+{
+  if (key == 'Q' && (mods & KEY_MOD_CTRL))
+    game.quit = 1;
+}
+
+void init_game(int width, int height)
+{
+  game.quit = 0;
+  init_camera(&camera, width, height);
+  camera.distance = 10;
+}
+
 static float apply_dead_zone(float val)
 {
   if (fabs(val) < GAMEPAD_DEAD_ZONE)
@@ -79,15 +91,15 @@ static void handle_input(void)
   //dump_gamepad_state(&gamepad);
   
   if (gamepad.btn_pressed[PAD_BTN_BACK])
-    console("%4.1f fps\n", fps_counter.fps);
+    console("%4.1f fps\n", game.fps_counter.fps);
 
   if (gamepad.btn_pressed[PAD_BTN_START])
     console("cam.dist=+%f, cam.theta=%+f, cam.phi=%+f, fov=%+f\n",
-            camera.distance, camera.theta, camera.phi, projection_fov/M_PI*180);
-
-  if (gamepad.btn_state[PAD_BTN_LB]) projection_fov -= 0.01;
-  if (gamepad.btn_state[PAD_BTN_RB]) projection_fov += 0.01;
-  projection_fov = clamp(projection_fov, M_PI/4, M_PI*0.9);
+            camera.distance, camera.theta, camera.phi, camera.fovy/M_PI*180);
+  
+  if (gamepad.btn_state[PAD_BTN_LB]) camera.fovy -= 0.01;
+  if (gamepad.btn_state[PAD_BTN_RB]) camera.fovy += 0.01;
+  camera.fovy = clamp(camera.fovy, M_PI/4, M_PI*0.9);
   
   float cam_x = apply_dead_zone(gamepad.axis[PAD_AXIS_CAM_X]);
   float cam_y = apply_dead_zone(gamepad.axis[PAD_AXIS_CAM_Y]);
@@ -114,7 +126,7 @@ static void handle_input(void)
   float move_y = apply_dead_zone(gamepad.axis[PAD_AXIS_MOVE_Y]);
   if (move_x != 0.0 || move_y != 0.0) {
     float front[3], left[3];
-    get_camera_vectors(&camera, front, left);
+    get_camera_vectors(&camera, front, left, NULL, NULL);
     front[1] = 0;
     left[1] = 0;
     vec3_normalize(front);
@@ -130,7 +142,7 @@ static void handle_input(void)
   }
 }
 
-void process_game_step(void)
+int process_game_step(void)
 {
   handle_input();
 
@@ -138,4 +150,6 @@ void process_game_step(void)
             creatures[0].pos[0],
             creatures[0].pos[1] + 0.8,
             creatures[0].pos[2]);
+
+  return game.quit;
 }

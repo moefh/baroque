@@ -64,9 +64,18 @@ static inline void vec4_load(float *v, float x, float y, float z, float w)
   v[3] = w;
 }
 
+static inline void vec4_copy(float *restrict dest, const float *restrict src)
+{
+  dest[0] = src[0];
+  dest[1] = src[1];
+  dest[2] = src[2];
+  dest[3] = src[3];
+}
+
 // vec3:
 void vec3_load_spherical(float *v, float r, float theta, float phi);
 void vec3_cross(float *restrict ret, const float *restrict a, const float *restrict b);
+void vec3_rotate_about_axis(float *restrict ret, const float *restrict vec, const float *restrict axis, float angle);
 
 static inline void vec3_load(float *v, float x, float y, float z)
 {
@@ -116,6 +125,20 @@ static inline void vec3_add(float *restrict out, float *restrict a, const float 
   out[2] = a[2] + b[2];
 }
 
+static inline void vec3_sub(float *restrict out, float *restrict a, const float *restrict b)
+{
+  out[0] = a[0] - b[0];
+  out[1] = a[1] - b[1];
+  out[2] = a[2] - b[2];
+}
+
+// vec2:
+static inline void vec2_load(float *v, float x, float y)
+{
+  v[0] = x;
+  v[1] = y;
+}
+
 // float:
 static inline float clamp(float val, float min, float max)
 {
@@ -124,6 +147,11 @@ static inline float clamp(float val, float min, float max)
   if (val > max)
     return max;
   return val;
+}
+
+static inline float snap_to_grid(float val, float grid_spacing)
+{
+  return round(val / grid_spacing) * grid_spacing;
 }
 
 #endif /* MATRIX_H_FILE */

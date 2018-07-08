@@ -44,17 +44,7 @@ static void joystick_callback(int joy, int event)
 
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
-  if (action != GLFW_PRESS && action != GLFW_REPEAT)
-    return;
-  
-  switch (key) {
-  case GLFW_KEY_ESCAPE:
-    glfwSetWindowShouldClose(window, 1);
-    break;
-
-  default:
-    break;
-  }
+  handle_game_key(key, (action == GLFW_PRESS || action == GLFW_REPEAT) ? 1 : 0, mods);
 }
 
 static int init_gfx()
@@ -102,19 +92,19 @@ static void cleanup_gfx(void)
 
 static void update_fps_counter(void)
 {
-  if (fps_counter.n_frames == 0) {
-    fps_counter.start_time = glfwGetTime();
-    fps_counter.n_frames++;
+  if (game.fps_counter.n_frames == 0) {
+    game.fps_counter.start_time = glfwGetTime();
+    game.fps_counter.n_frames++;
     return;
   }
 
-  double time_elapsed = glfwGetTime() - fps_counter.start_time;
+  double time_elapsed = glfwGetTime() - game.fps_counter.start_time;
   if (time_elapsed >= 1.0) {
-    fps_counter.fps = fps_counter.n_frames / time_elapsed;
-    fps_counter.n_frames = 0;
+    game.fps_counter.fps = game.fps_counter.n_frames / time_elapsed;
+    game.fps_counter.n_frames = 0;
     return;
   }
-  fps_counter.n_frames++;
+  game.fps_counter.n_frames++;
 }
 
 int main(void)
@@ -131,6 +121,7 @@ int main(void)
   glfwGetWindowSize(window, &width, &height);
   if (render_setup(width, height) != 0)
     goto err;
+  init_game(width, height);
   
   debug("- Running main loop...\n");
   while (1) {
@@ -138,7 +129,8 @@ int main(void)
     if (glfwWindowShouldClose(window))
       break;
     
-    process_game_step();
+    if (process_game_step())
+      break;
     render_screen();
     update_fps_counter();
     glfwSwapBuffers(window);
