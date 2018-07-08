@@ -270,7 +270,6 @@ static int write_bff_model(struct SAVE_INFO *s, struct MODEL *model, struct ROOM
         get_global_tex_index(s, room_info, model->textures, mesh->tex1_index, &tex1_index) != 0)
       return 1;
 
-    printf("will write model stuff (including matrix)\n");
     if (write_u32(s, mesh->vtx_size) != 0 ||
         write_u32(s, mesh->ind_size) != 0 ||
         write_u32(s, mesh->ind_count) != 0 ||
