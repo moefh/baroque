@@ -6,21 +6,26 @@
 #include <stdint.h>
 #include "gfx.h"
 
-#define BFF_MAX_ROOMS    1024
-#define BFF_MAX_TEXTURES 1024
+#define BWF_MAX_ROOMS    1024
+#define BWF_MAX_TEXTURES 1024
 
-struct BFF {
+struct BFF_READER {
   FILE *f;
-  uint32_t n_rooms;
-  uint32_t room_off[BFF_MAX_ROOMS];
-  uint32_t n_textures;
-  uint32_t texture_off[BFF_MAX_TEXTURES];
-  int texture_index[BFF_MAX_TEXTURES];
 };
 
-int open_bff(struct BFF *bff, const char *filename);
-void close_bff(struct BFF *bff);
+struct BWF_READER {
+  struct BFF_READER bff;
+  uint32_t n_rooms;
+  uint32_t room_off[BWF_MAX_ROOMS];
+  uint32_t n_textures;
+  uint32_t texture_off[BWF_MAX_TEXTURES];
+  int texture_index[BWF_MAX_TEXTURES];
+};
 
-int load_bff_room(struct BFF *bff, int room);
+int open_bwf(struct BWF_READER *bwf, const char *filename);
+void close_bwf(struct BWF_READER *bwf);
+int load_bwf_room(struct BWF_READER *bwf, int room);
+
+int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data);
 
 #endif /* MODEL_H_FILE */

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define MODEL_FLAGS_IMAGE_REFS    (1<<0)
+#define MODEL_FLAGS_PACKED_IMAGES (1<<1)
 
 #define MODEL_TEXTURE_NONE 0xffff
 

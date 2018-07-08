@@ -15,14 +15,14 @@
 
 #define MAX_ROOM_MESHES  256
 
-static int set_file_pos(struct BFF *bff, uint32_t pos)
+static int set_file_pos(struct BFF_READER *bff, uint32_t pos)
 {
   if (fseek(bff->f, pos, SEEK_SET) != 0)
     return 1;
   return 0;
 }
 
-static int get_file_pos(struct BFF *bff, uint32_t *pos)
+static int get_file_pos(struct BFF_READER *bff, uint32_t *pos)
 {
   long n = ftell(bff->f);
   if (n < 0)
@@ -31,14 +31,14 @@ static int get_file_pos(struct BFF *bff, uint32_t *pos)
   return 0;
 }
 
-static int read_data(struct BFF *bff, void *data, size_t size)
+static int read_data(struct BFF_READER *bff, void *data, size_t size)
 {
   if (fread(data, 1, size, bff->f) != size)
     return 1;
   return 0;
 }
 
-static int read_u8(struct BFF *bff, uint8_t *ret)
+static int read_u8(struct BFF_READER *bff, uint8_t *ret)
 {
   int c = fgetc(bff->f);
   if (c == EOF)
@@ -47,7 +47,7 @@ static int read_u8(struct BFF *bff, uint8_t *ret)
   return 0;
 }
 
-static int read_u16(struct BFF *bff, uint16_t *ret)
+static int read_u16(struct BFF_READER *bff, uint16_t *ret)
 {
   unsigned char b[2];
   if (read_data(bff, b, 2) != 0)
@@ -57,7 +57,7 @@ static int read_u16(struct BFF *bff, uint16_t *ret)
   return 0;
 }
 
-static int read_u32(struct BFF *bff, uint32_t *ret)
+static int read_u32(struct BFF_READER *bff, uint32_t *ret)
 {
   unsigned char b[4];
   if (read_data(bff, b, 4) != 0)
@@ -67,7 +67,7 @@ static int read_u32(struct BFF *bff, uint32_t *ret)
   return 0;
 }
 
-static int read_f32(struct BFF *bff, float *ret)
+static int read_f32(struct BFF_READER *bff, float *ret)
 {
   union {
     float f;
@@ -83,7 +83,7 @@ static int read_f32(struct BFF *bff, float *ret)
   return 0;
 }
 
-static int read_f32_vec(struct BFF *bff, float *vec, size_t n)
+static int read_f32_vec(struct BFF_READER *bff, float *vec, size_t n)
 {
   for (size_t i = 0; i < n; i++) {
     if (read_f32(bff, &vec[i]) != 0)
@@ -92,39 +92,7 @@ static int read_f32_vec(struct BFF *bff, float *vec, size_t n)
   return 0;
 }
 
-static int read_index(struct BFF *bff)
-{
-  char header[4];
-  if (read_data(bff, header, 4) != 0)
-    return 1;
-  if (memcmp(header, "BFF1", 4) != 0)
-    return 1;
-
-  uint32_t index_off;
-  if (read_u32(bff, &index_off) != 0)
-    return 1;
-
-  if (set_file_pos(bff, index_off) != 0)
-    return 1;
-
-  if (read_u32(bff, &bff->n_rooms) != 0)
-    return 1;
-  for (uint32_t i = 0; i < bff->n_rooms; i++) {
-    if (read_u32(bff, &bff->room_off[i]) != 0)
-      return 1;
-  }
-
-  if (read_u32(bff, &bff->n_textures) != 0)
-    return 1;
-  for (uint32_t i = 0; i < bff->n_textures; i++) {
-    if (read_u32(bff, &bff->texture_off[i]) != 0)
-      return 1;
-  }
-
-  return 0;
-}
-
-static struct MODEL_MESH *read_mesh(struct BFF *bff, uint32_t *tex0_index, uint32_t *tex1_index)
+static struct GFX_MESH *load_bff_mesh(struct BFF_READER *bff, uint32_t type, uint32_t info, void *data, uint32_t *tex0_index, uint32_t *tex1_index)
 {
   uint16_t vtx_type, ind_type;
   uint32_t vtx_size, ind_size;
@@ -151,17 +119,14 @@ static struct MODEL_MESH *read_mesh(struct BFF *bff, uint32_t *tex0_index, uint3
     return NULL;
   }
 
-  return mesh;
+  struct GFX_MESH *gfx_mesh = gfx_upload_model_mesh(mesh, type, info, data);
+  free(mesh);
+  
+  return gfx_mesh;
 }
 
-static struct GFX_TEXTURE *load_bff_texture(struct BFF *bff, int texture)
+static struct GFX_TEXTURE *load_bff_texture(struct BFF_READER *bff)
 {
-  if (texture < 0 || (uint32_t)texture >= bff->n_textures)
-    return NULL;
-
-  if (set_file_pos(bff, bff->texture_off[texture]) != 0)
-    return NULL;
-
   int width, height, n_chan;
   void *data = stbi_load_from_file(bff->f, &width, &height, &n_chan, 0);
   if (! data)
@@ -178,86 +143,202 @@ static struct GFX_TEXTURE *load_bff_texture(struct BFF *bff, int texture)
   return gfx_tex;
 }
 
-static int load_bff_mesh(struct BFF *bff, int room)
+/* ========================================================================================
+ * BMF reader
+ */
+
+struct BMF_READER {
+  struct BFF_READER bff;
+  
+  size_t n_meshes;
+  struct GFX_MESH *mesh[MODEL_MAX_MESHES];
+  uint32_t mesh_texture_index[MODEL_MAX_MESHES];
+};
+
+static int read_bmf_header(struct BMF_READER *bmf)
 {
-  uint32_t tex0_index, tex1_index;
-  struct MODEL_MESH *mesh = read_mesh(bff, &tex0_index, &tex1_index);
-  if (! mesh)
+  char header[4];
+  if (read_data(&bmf->bff, header, 4) != 0)
+    return 1;
+  if (memcmp(header, "BMF1", 4) != 0)
     return 1;
 
-  struct GFX_MESH *gfx_mesh = gfx_upload_model_mesh(mesh, GFX_MESH_TYPE_ROOM, room, NULL);
-  if (! gfx_mesh)
+  return 0;
+}
+
+static int load_bmf_meshes(struct BMF_READER *bmf, uint32_t type, uint32_t info, void *data)
+{
+  uint16_t n_meshes;
+  if (read_u16(&bmf->bff, &n_meshes) != 0)
+    return 1;
+  if (n_meshes > MODEL_MAX_MESHES)
+    return 1;
+
+  bmf->n_meshes = n_meshes;
+  for (uint16_t i = 0; i < n_meshes; i++) {
+    uint32_t tex0_index, tex1_index;
+    bmf->mesh[i] = load_bff_mesh(&bmf->bff, type, info, data, &tex0_index, &tex1_index);
+    if (! bmf->mesh[i])
+      return 1;
+    bmf->mesh_texture_index[i] = tex0_index;
+  }
+  return 0;
+}
+
+static int load_bmf_textures(struct BMF_READER *bmf)
+{
+  uint16_t n_textures;
+  if (read_u16(&bmf->bff, &n_textures) != 0)
+    return 1;
+
+  for (uint16_t i = 0; i < n_textures; i++) {
+    struct GFX_TEXTURE *texture = load_bff_texture(&bmf->bff);
+    if (! texture)
+      return 1;
+    for (size_t mesh = 0; mesh < bmf->n_meshes; mesh++) {
+      if (bmf->mesh_texture_index[mesh] == i)
+        bmf->mesh[mesh]->texture = texture;
+    }
+  }
+  return 0;
+}
+
+int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data)
+{
+  struct BMF_READER bmf;
+  
+  bmf.bff.f = fopen(filename, "rb");
+  if (! bmf.bff.f)
+    return 1;
+
+  if (read_bmf_header(&bmf) != 0)
     goto err;
 
-  if (tex0_index != 0xffffffff) {
-    uint32_t cur_file_pos;
-    if (get_file_pos(bff, &cur_file_pos) != 0)
-      goto err;
-    
-    gfx_mesh->texture = load_bff_texture(bff, tex0_index);
-    if (! gfx_mesh->texture)
-      goto err;
-    
-    if (set_file_pos(bff, cur_file_pos) != 0)
-      goto err;
-  } else {
-    gfx_mesh->texture = NULL;
-  }
-  free(mesh);
+  if (load_bmf_meshes(&bmf, type, info, data) != 0)
+    goto err;
+
+  if (load_bmf_textures(&bmf) != 0)
+    goto err;
+  
+  fclose(bmf.bff.f);
   return 0;
 
  err:
-  free(mesh);
+  fclose(bmf.bff.f);
   return 1;
 }
 
-static int read_bff_room_info(struct BFF *bff)
+/* ========================================================================================
+ * BWF reader
+ */
+
+static int read_bwf_index(struct BWF_READER *bwf)
+{
+  char header[4];
+  if (read_data(&bwf->bff, header, 4) != 0)
+    return 1;
+  if (memcmp(header, "BWF1", 4) != 0)
+    return 1;
+
+  uint32_t index_off;
+  if (read_u32(&bwf->bff, &index_off) != 0)
+    return 1;
+
+  if (set_file_pos(&bwf->bff, index_off) != 0)
+    return 1;
+
+  if (read_u32(&bwf->bff, &bwf->n_rooms) != 0)
+    return 1;
+  for (uint32_t i = 0; i < bwf->n_rooms; i++) {
+    if (read_u32(&bwf->bff, &bwf->room_off[i]) != 0)
+      return 1;
+  }
+
+  if (read_u32(&bwf->bff, &bwf->n_textures) != 0)
+    return 1;
+  for (uint32_t i = 0; i < bwf->n_textures; i++) {
+    if (read_u32(&bwf->bff, &bwf->texture_off[i]) != 0)
+      return 1;
+  }
+
+  return 0;
+}
+
+static int load_bwf_mesh(struct BWF_READER *bwf, int room)
+{
+  uint32_t tex0_index, tex1_index;
+  struct GFX_MESH *gfx_mesh = load_bff_mesh(&bwf->bff, GFX_MESH_TYPE_ROOM, room, NULL, &tex0_index, &tex1_index);
+  if (! gfx_mesh)
+    return 1;
+
+  if (tex0_index != 0xffffffff) {
+    uint32_t cur_file_pos;
+    if (get_file_pos(&bwf->bff, &cur_file_pos) != 0)
+      return 1;
+    
+    if (tex0_index >= bwf->n_textures ||
+        set_file_pos(&bwf->bff, bwf->texture_off[tex0_index]) != 0)
+      return 1;
+
+    gfx_mesh->texture = load_bff_texture(&bwf->bff);
+    if (! gfx_mesh->texture)
+      return 1;
+    
+    if (set_file_pos(&bwf->bff, cur_file_pos) != 0)
+      return 1;
+  } else {
+    gfx_mesh->texture = NULL;
+  }
+  return 0;
+}
+
+static int read_bwf_room_info(struct BWF_READER *bwf)
 {
   /* This is a hack: we currently discard all room info. This should
    * be saved in a global room info storage somewhere.
    */
   
   float pos[3];
-  if (read_f32_vec(bff, pos, 3) != 0)
+  if (read_f32_vec(&bwf->bff, pos, 3) != 0)
     return 1;
 
   uint8_t n_neighbors;
-  if (read_u8(bff, &n_neighbors) != 0)
+  if (read_u8(&bwf->bff, &n_neighbors) != 0)
     return 1;
   for (uint8_t i = 0; i < n_neighbors; i++) {
     uint32_t neighbor_index;
-    if (read_u32(bff, &neighbor_index) != 0)
+    if (read_u32(&bwf->bff, &neighbor_index) != 0)
       return 1;
   }
 
   uint8_t tiles_dim[4];
-  if (read_data(bff, tiles_dim, 4) != 0)
+  if (read_data(&bwf->bff, tiles_dim, 4) != 0)
     return 1;
   int tiles_size = 2 * (int)tiles_dim[1] * (int)tiles_dim[3];
   static uint16_t tiles[256][256];
-  if (read_data(bff, tiles, tiles_size) != 0)
+  if (read_data(&bwf->bff, tiles, tiles_size) != 0)
     return 1;
   
   return 0;
 }
 
-int load_bff_room(struct BFF *bff, int room)
+int load_bwf_room(struct BWF_READER *bwf, int room)
 {
-  if (room < 0 || (uint32_t)room >= bff->n_rooms)
+  if (room < 0 || (uint32_t)room >= bwf->n_rooms)
     return 1;
 
-  if (set_file_pos(bff, bff->room_off[room]) != 0)
+  if (set_file_pos(&bwf->bff, bwf->room_off[room]) != 0)
     return 1;
 
-  if (read_bff_room_info(bff) != 0)
+  if (read_bwf_room_info(bwf) != 0)
     return 1;
   
   uint16_t n_meshes;
-  if (read_u16(bff, &n_meshes) != 0)
+  if (read_u16(&bwf->bff, &n_meshes) != 0)
     return 1;
 
   for (uint32_t i = 0; i < n_meshes; i++) {
-    if (load_bff_mesh(bff, room) != 0) {
+    if (load_bwf_mesh(bwf, room) != 0) {
       // TODO: cleanup
       return 1;
     }
@@ -266,20 +347,20 @@ int load_bff_room(struct BFF *bff, int room)
   return 0;
 }
 
-int open_bff(struct BFF *bff, const char *filename)
+int open_bwf(struct BWF_READER *bwf, const char *filename)
 {
-  bff->f = fopen(filename, "rb");
-  if (! bff->f)
+  bwf->bff.f = fopen(filename, "rb");
+  if (! bwf->bff.f)
     return 1;
 
-  if (read_index(bff) != 0) {
-    fclose(bff->f);
+  if (read_bwf_index(bwf) != 0) {
+    fclose(bwf->bff.f);
     return 1;
   }
   return 0;
 }
 
-void close_bff(struct BFF *bff)
+void close_bwf(struct BWF_READER *bwf)
 {
-  fclose(bff->f);
+  fclose(bwf->bff.f);
 }

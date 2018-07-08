@@ -69,17 +69,23 @@ static int load_shader(void)
 
 static int load_models(void)
 {
-  struct BFF bff;
-
-  if (open_bff(&bff, "data/world.bff") != 0)
-    return 1;
-
-  if (load_bff_room(&bff, 5) != 0) {
-    close_bff(&bff);
+  struct BWF_READER bwf;
+  if (open_bwf(&bwf, "data/world.bwf") != 0) {
+    debug("** ERROR: can't open data/world.bmf\n");
     return 1;
   }
+  if (load_bwf_room(&bwf, 5) != 0) {
+    debug("** ERROR: can't load room\n");
+    close_bwf(&bwf);
+    return 1;
+  }
+  close_bwf(&bwf);
 
-  close_bff(&bff);
+  if (load_bmf("data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
+    debug("** ERROR: can't load player model from data/player.bmf\n");
+    return 1;
+  }
+  
   return 0;
 }
 

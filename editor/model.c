@@ -81,6 +81,18 @@ static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, u
     model_tex->width = reader->data_off + buffer_view->byte_offset;
     model_tex->height = buffer_view->byte_length;
     model_tex->n_chan = 0;
+  } else if (reader->read_flags & MODEL_FLAGS_PACKED_IMAGES) {
+    if (set_file_pos(reader, buffer_view->byte_offset) != 0)
+      return 1;
+
+    model_tex->data = malloc(buffer_view->byte_length);
+    if (! model_tex->data)
+      return 1;
+    if (read_file_data(reader, model_tex->data, buffer_view->byte_length) != 0)
+      return 1;
+    model_tex->width = buffer_view->byte_length;
+    model_tex->height = buffer_view->byte_length;
+    model_tex->n_chan = 0;
   } else {
     if (set_file_pos(reader, buffer_view->byte_offset) != 0)
       return 1;

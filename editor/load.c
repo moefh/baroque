@@ -241,7 +241,7 @@ int load_map_rooms(const char *filename, struct EDITOR_ROOM_LIST *rooms)
   
   free_json_reader(reader);
   free_load_info(&info);
-  out_text("-> OK\n");
+  out_text("-> load OK\n");
   return 0;
 
  err:

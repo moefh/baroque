@@ -17,7 +17,7 @@
 #include "gfx.h"
 #include "render.h"
 
-#define DEFAULT_MAP_FILE "data/world.map"
+#define DEFAULT_MAP_FILE "data/world.json"
 
 #define MAX_COMMAND_ARGS   32
 
