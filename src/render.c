@@ -126,7 +126,7 @@ int render_setup(int width, int height)
 void render_set_viewport(int width, int height)
 {
   glViewport(0, 0, width, height);
-  set_camera_viewport(&camera, width, height);
+  set_camera_viewport(&game.camera, width, height);
 
   float text_base_size = 1.0 / 28.0;
   text_scale[0] = text_base_size * 0.5;
@@ -153,7 +153,7 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
     break;
 
   case GFX_MESH_TYPE_CREATURE:
-    get_creature_model_matrix(mat_model, mesh->matrix, &creatures[mesh->info]);
+    get_creature_model_matrix(mat_model, mesh->matrix, &game.creatures[mesh->info]);
     break;
     
   default:
@@ -247,16 +247,16 @@ void render_screen(void)
 
   // models
   float camera_pos[3];
-  get_camera_pos(&camera, camera_pos);
+  get_camera_pos(&game.camera, camera_pos);
 
   float light_pos[3];
   get_light_pos(light_pos);
   
   float mat_projection[16];
-  get_camera_projection_matrix(&camera, mat_projection);
+  get_camera_projection_matrix(&game.camera, mat_projection);
 
   float mat_view[16];
-  get_camera_view_matrix(&camera, mat_view);
+  get_camera_view_matrix(&game.camera, mat_view);
   
   float mat_view_projection[16];
   mat4_mul(mat_view_projection, mat_projection, mat_view);

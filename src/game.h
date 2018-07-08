@@ -60,6 +60,8 @@ struct CREATURE {
 struct GAME {
   int quit;
   struct FPS_COUNTER fps_counter;
+  struct CAMERA camera;
+  struct CREATURE creatures[MAX_CREATURES];
 };
 
 void init_game(int width, int height);
@@ -69,7 +71,5 @@ void get_light_pos(float *light_pos);
 
 extern struct GAME game;
 extern struct GAMEPAD gamepad;
-extern struct CAMERA camera;
-extern struct CREATURE creatures[MAX_CREATURES];
 
 #endif /* GAME_H_FILE */
