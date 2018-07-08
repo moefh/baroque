@@ -209,7 +209,7 @@ static int fix_room_neighbors(struct LOAD_INFO *info)
 
     room->n_neighbors = room_info->n_neighbors;
     for (int i = 0; i < room_info->n_neighbors; i++) {
-      if (room_info->neighbor_ids[i] < 0 || room_info->neighbor_ids[i] >= info->n_rooms) {
+      if (room_info->neighbor_ids[i] >= info->n_rooms) {
         out_text("** ERROR: room %d has invalid neighbor %d\n", room_index, room_info->neighbor_ids[i]);
         return 1;
       }

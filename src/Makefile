@@ -11,7 +11,7 @@ OS_LIBS = -L. -lglfw -lGL -ldl
 endif
 
 CC = gcc
-CFLAGS = $(OS_CFLAGS) -O2 -Wall -I../include
+CFLAGS = $(OS_CFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -Wno-cast-function-type -I../include
 LDFLAGS = $(OS_LDFLAGS)
 
 OBJS = main.o render.o bff.o gfx.o game.o model.o font.o shader.o debug.o glad.o gl_error.o image.o matrix.o gamepad.o camera.o

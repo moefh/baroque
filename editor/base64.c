@@ -23,7 +23,7 @@ static const unsigned char b64_dec_table[] = {
 
 static uint32_t get_char_val(int c)
 {
-  if (c >= 0 && c <= sizeof(b64_dec_table))
+  if (c >= 0 && (size_t)c <= sizeof(b64_dec_table))
     return b64_dec_table[c];
   return 65;
 }

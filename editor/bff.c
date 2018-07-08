@@ -1,4 +1,4 @@
-/* save_bff.c */
+/* bff.c */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -8,27 +8,33 @@
 #include "load.h"
 #include "model.h"
 
-struct SAVE_INFO;
+struct BFF_WRITER;
 
-typedef int (translate_tex_index_func)(struct SAVE_INFO *s, struct MODEL *model, int model_tex_index, uint32_t *tex_index, void *p);
+typedef int (translate_tex_index_func)(struct BFF_WRITER *bff, struct MODEL *model, int model_tex_index, uint32_t *tex_index, void *p);
 
-struct SAVE_INFO {
+struct BFF_WRITER {
   FILE *f;
   size_t cur_file_offset;
   translate_tex_index_func *translate_tex_index;
 };
 
-static void init_save_info(struct SAVE_INFO *s, translate_tex_index_func *translate_tex_index)
+static int open_bff(struct BFF_WRITER *bff, const char *filename, translate_tex_index_func *translate_tex_index)
 {
-  s->f = NULL;
-  s->cur_file_offset = 0;
-  s->translate_tex_index = translate_tex_index;
+  bff->f = fopen(filename, "wb");
+  if (! bff->f)
+    return 1;
+  bff->cur_file_offset = 0;
+  bff->translate_tex_index = translate_tex_index;
+  return 0;
 }
 
-static void close_save_info(struct SAVE_INFO *s)
+static int close_bff(struct BFF_WRITER *bff)
 {
-  if (s->f)
-    fclose(s->f);
+  if (bff->f) {
+    if (fclose(bff->f) != 0)
+      return 1;
+  }
+  return 0;
 }
 
 static int read_file_block(const char *filename, void *data, size_t offset, size_t size)
@@ -52,51 +58,51 @@ static int read_file_block(const char *filename, void *data, size_t offset, size
   return 1;
 }
 
-static int set_file_pos(struct SAVE_INFO *s, size_t pos)
+static int set_file_pos(struct BFF_WRITER *bff, size_t pos)
 {
-  if (fseek(s->f, pos, SEEK_SET) != 0)
+  if (fseek(bff->f, pos, SEEK_SET) != 0)
     return 1;
-  s->cur_file_offset = pos;
+  bff->cur_file_offset = pos;
   return 0;
 }
 
-static int write_data(struct SAVE_INFO *s, void *data, size_t size)
+static int write_data(struct BFF_WRITER *bff, void *data, size_t size)
 {
-  if (fwrite(data, 1, size, s->f) != size)
+  if (fwrite(data, 1, size, bff->f) != size)
     return 1;
-  s->cur_file_offset += size;
+  bff->cur_file_offset += size;
   return 0;
 }
 
-static int write_u8(struct SAVE_INFO *s, uint8_t n)
+static int write_u8(struct BFF_WRITER *bff, uint8_t n)
 {
-  if (fputc(n, s->f) == EOF)
+  if (fputc(n, bff->f) == EOF)
     return 1;
-  s->cur_file_offset++;
+  bff->cur_file_offset++;
   return 0;
 }
 
-static int write_u16(struct SAVE_INFO *s, uint16_t n)
+static int write_u16(struct BFF_WRITER *bff, uint16_t n)
 {
-  if (fputc((n      ) & 0xff, s->f) == EOF ||
-      fputc((n >>  8) & 0xff, s->f) == EOF)
+  if (fputc((n      ) & 0xff, bff->f) == EOF ||
+      fputc((n >>  8) & 0xff, bff->f) == EOF)
     return 1;
-  s->cur_file_offset += 2;
+  bff->cur_file_offset += 2;
   return 0;
 }
 
-static int write_u32(struct SAVE_INFO *s, uint32_t n)
+static int write_u32(struct BFF_WRITER *bff, uint32_t n)
 {
-  if (fputc((n      ) & 0xff, s->f) == EOF ||
-      fputc((n >>  8) & 0xff, s->f) == EOF ||
-      fputc((n >> 16) & 0xff, s->f) == EOF ||
-      fputc((n >> 24) & 0xff, s->f) == EOF)
+  if (fputc((n      ) & 0xff, bff->f) == EOF ||
+      fputc((n >>  8) & 0xff, bff->f) == EOF ||
+      fputc((n >> 16) & 0xff, bff->f) == EOF ||
+      fputc((n >> 24) & 0xff, bff->f) == EOF)
     return 1;
-  s->cur_file_offset += 4;
+  bff->cur_file_offset += 4;
   return 0;
 }
 
-static int write_f32(struct SAVE_INFO *s, float n)
+static int write_f32(struct BFF_WRITER *bff, float n)
 {
   union {
     float f;
@@ -104,40 +110,40 @@ static int write_f32(struct SAVE_INFO *s, float n)
   } pun;
 
   pun.f = n;
-  return write_u32(s, pun.u);
+  return write_u32(bff, pun.u);
 }
 
-static int write_mat4(struct SAVE_INFO *s, float *mat)
+static int write_mat4(struct BFF_WRITER *bff, float *mat)
 {
   for (int i = 0; i < 16; i++)
-    if (write_f32(s, mat[i]) != 0)
+    if (write_f32(bff, mat[i]) != 0)
       return 1;
   return 0;
 }
 
-static int write_model_meshes(struct SAVE_INFO *s, struct MODEL *model, void *data)
+static int write_model_meshes(struct BFF_WRITER *bff, struct MODEL *model, void *data)
 {
-  if (write_u16(s, model->n_meshes) != 0)
+  if (write_u16(bff, model->n_meshes) != 0)
     return 1;
 
   for (int i = 0; i < model->n_meshes; i++) {
     struct MODEL_MESH *mesh = model->meshes[i];
 
     uint32_t tex0_index, tex1_index;
-    if (s->translate_tex_index(s, model, mesh->tex0_index, &tex0_index, data) != 0 ||
-        s->translate_tex_index(s, model, mesh->tex1_index, &tex1_index, data) != 0)
+    if (bff->translate_tex_index(bff, model, mesh->tex0_index, &tex0_index, data) != 0 ||
+        bff->translate_tex_index(bff, model, mesh->tex1_index, &tex1_index, data) != 0)
       return 1;
 
-    if (write_u32(s, mesh->vtx_size) != 0 ||
-        write_u32(s, mesh->ind_size) != 0 ||
-        write_u32(s, mesh->ind_count) != 0 ||
-        write_u16(s, mesh->vtx_type) != 0 ||
-        write_u16(s, mesh->ind_type) != 0 ||
-        write_u32(s, tex0_index) != 0 ||
-        write_u32(s, tex1_index) != 0 ||
-        write_mat4(s, mesh->matrix) != 0 ||
-        write_data(s, mesh->vtx, mesh->vtx_size) != 0 ||
-        write_data(s, mesh->ind, mesh->ind_size) != 0)
+    if (write_u32(bff, mesh->vtx_size) != 0 ||
+        write_u32(bff, mesh->ind_size) != 0 ||
+        write_u32(bff, mesh->ind_count) != 0 ||
+        write_u16(bff, mesh->vtx_type) != 0 ||
+        write_u16(bff, mesh->ind_type) != 0 ||
+        write_u32(bff, tex0_index) != 0 ||
+        write_u32(bff, tex1_index) != 0 ||
+        write_mat4(bff, mesh->matrix) != 0 ||
+        write_data(bff, mesh->vtx, mesh->vtx_size) != 0 ||
+        write_data(bff, mesh->ind, mesh->ind_size) != 0)
       return 1;
   }
 
@@ -150,28 +156,28 @@ static int write_model_meshes(struct SAVE_INFO *s, struct MODEL *model, void *da
 
 #define BMF_VERSION '1'
 
-static int get_bmf_tex_index(struct SAVE_INFO *s, struct MODEL *model, int model_tex_index, uint32_t *bwf_tex_index, void *data)
+static int get_bmf_tex_index(struct BFF_WRITER *bff, struct MODEL *model, int model_tex_index, uint32_t *bwf_tex_index, void *data)
 {
   *bwf_tex_index = model_tex_index;
   return 0;
 }
 
-static int write_bmf_header(struct SAVE_INFO *s)
+static int write_bmf_header(struct BFF_WRITER *bff)
 {
   char header[4];
   
-  memcpy(header + 0, "BMF", 3);
+  memcpy(header, "BMF", 3);
   header[3] = BMF_VERSION;
-  if (write_data(s, header, 4) != 0) {
+  if (write_data(bff, header, 4) != 0) {
     printf("** ERROR: can't write file header\n");
     return 1;
   }
   return 0;
 }
 
-int write_bmf_model_textures(struct SAVE_INFO *s, struct MODEL *model)
+int write_bmf_model_textures(struct BFF_WRITER *bff, struct MODEL *model)
 {
-  if (write_u16(s, model->n_textures) != 0)
+  if (write_u16(bff, model->n_textures) != 0)
     return 1;
   
   for (int i = 0; i < model->n_textures; i++) {
@@ -179,7 +185,7 @@ int write_bmf_model_textures(struct SAVE_INFO *s, struct MODEL *model)
     
     struct MODEL_TEXTURE *tex = &model->textures[i];
     uint32_t image_length = tex->height;
-    if (write_data(s, tex->data, image_length) != 0) {
+    if (write_data(bff, tex->data, image_length) != 0) {
       printf("** ERROR: can't write texture data\n");
       return 1;
     }
@@ -195,29 +201,33 @@ int write_bmf_file(const char *bmf_filename, const char *glb_filename)
     return 1;
   }
 
-  struct SAVE_INFO info;
-  init_save_info(&info, get_bmf_tex_index);
-  info.f = fopen(bmf_filename, "wb");
-  if (! info.f)
+  struct BFF_WRITER bff;
+  if (open_bff(&bff, bmf_filename, get_bmf_tex_index) != 0) {
+    printf("** ERROR opening file '%s'\n", bmf_filename);
     goto err;
+  }
 
-  if (write_bmf_header(&info) != 0)
+  if (write_bmf_header(&bff) != 0)
     goto err;
   
   printf("-> writing model meshes\n");
-  if (write_model_meshes(&info, &model, NULL) != 0)
+  if (write_model_meshes(&bff, &model, NULL) != 0)
     goto err;
 
-  if (write_bmf_model_textures(&info, &model) != 0)
+  if (write_bmf_model_textures(&bff, &model) != 0)
     goto err;
   
   free_model(&model);
-  close_save_info(&info);
+  if (close_bff(&bff) != 0) {
+    free_model(&model);
+    printf("** ERROR writing file data\n");
+    return 1;
+  }
   return 0;
 
  err:
   free_model(&model);
-  close_save_info(&info);
+  close_bff(&bff);
   return 1;
 }
 
@@ -240,8 +250,8 @@ struct ROOM_INFO {
   size_t file_offset;
 };
 
-struct BWF_SAVE_INFO {
-  struct SAVE_INFO info;
+struct BWF_WRITER {
+  struct BFF_WRITER bff;
 
   int n_rooms;
   struct ROOM_INFO *rooms;
@@ -251,9 +261,10 @@ struct BWF_SAVE_INFO {
   struct IMAGE_INFO *images;
 };
 
-static void init_bwf_save_info(struct BWF_SAVE_INFO *bwf, translate_tex_index_func *func)
+static int open_bwf(struct BWF_WRITER *bwf, const char *filename, translate_tex_index_func *func)
 {
-  init_save_info(&bwf->info, func);
+  if (open_bff(&bwf->bff, filename, func) != 0)
+    return 1;
   
   bwf->n_rooms = 0;
   bwf->rooms = NULL;
@@ -261,14 +272,14 @@ static void init_bwf_save_info(struct BWF_SAVE_INFO *bwf, translate_tex_index_fu
   bwf->n_images = 0;
   bwf->alloc_images = 0;
   bwf->images = NULL;
+  return 0;
 }
 
-static int free_bwf_save_info(struct BWF_SAVE_INFO *bwf)
+static int close_bwf(struct BWF_WRITER *bwf)
 {
   free(bwf->rooms);
   free(bwf->images);
-  close_save_info(&bwf->info);
-  return 0;
+  return close_bff(&bwf->bff);
 }
 
 static struct ROOM_INFO *create_room_info(struct EDITOR_ROOM_LIST *rooms, int *p_n_rooms)
@@ -292,7 +303,7 @@ static struct ROOM_INFO *create_room_info(struct EDITOR_ROOM_LIST *rooms, int *p
   return room_info;
 }
 
-static struct IMAGE_INFO *get_image(struct BWF_SAVE_INFO *bwf, struct MODEL_TEXTURE *tex, struct ROOM_INFO *room_info, int tex_index)
+static struct IMAGE_INFO *get_image(struct BWF_WRITER *bwf, struct MODEL_TEXTURE *tex, struct ROOM_INFO *room_info, int tex_index)
 {
   char *image_name = (char *) tex->data;
 
@@ -317,23 +328,23 @@ static struct IMAGE_INFO *get_image(struct BWF_SAVE_INFO *bwf, struct MODEL_TEXT
   return image;
 }
 
-static int write_bwf_header(struct BWF_SAVE_INFO *bwf)
+static int write_bwf_header(struct BWF_WRITER *bwf)
 {
   char header[8];
   
   memcpy(header + 0, "BWF", 3);
   header[3] = BWF_VERSION;
   memset(header + 4, 0xff, 4);
-  if (write_data(&bwf->info, header, 8) != 0) {
+  if (write_data(&bwf->bff, header, 8) != 0) {
     printf("** ERROR: can't write file header\n");
     return 1;
   }
   return 0;
 }
 
-static int get_bwf_tex_index(struct SAVE_INFO *s, struct MODEL *model, int model_tex_index, uint32_t *bwf_tex_index, void *data)
+static int get_bwf_tex_index(struct BFF_WRITER *bff, struct MODEL *model, int model_tex_index, uint32_t *bwf_tex_index, void *data)
 {
-  struct BWF_SAVE_INFO *bwf = (struct BWF_SAVE_INFO *) s;
+  struct BWF_WRITER *bwf = (struct BWF_WRITER *) bff;
   struct ROOM_INFO *room_info = data;
   
   if (model_tex_index == MODEL_TEXTURE_NONE) {
@@ -348,18 +359,18 @@ static int get_bwf_tex_index(struct SAVE_INFO *s, struct MODEL *model, int model
   return 0;
 }
 
-static int write_bwf_room_neighbors(struct BWF_SAVE_INFO *bwf, struct EDITOR_ROOM *room)
+static int write_bwf_room_neighbors(struct BWF_WRITER *bwf, struct EDITOR_ROOM *room)
 {
-  if (write_u8(&bwf->info, room->n_neighbors) != 0)
+  if (write_u8(&bwf->bff, room->n_neighbors) != 0)
     return 1;
   for (int i = 0; i < room->n_neighbors; i++) {
-    if (write_u32(&bwf->info, room->neighbors[i]->serialization_index) != 0)
+    if (write_u32(&bwf->bff, room->neighbors[i]->serialization_index) != 0)
       return 1;
   }
   return 0;
 }
 
-static int write_bwf_room_tiles(struct BWF_SAVE_INFO *bwf, uint16_t (*tiles)[256])
+static int write_bwf_room_tiles(struct BWF_WRITER *bwf, uint16_t (*tiles)[256])
 {
   int x_min, y_min, x_max, y_max;
   x_min = y_min = x_max = y_max = -1;
@@ -382,31 +393,31 @@ static int write_bwf_room_tiles(struct BWF_SAVE_INFO *bwf, uint16_t (*tiles)[256
     y_size = y_max - y_min + 1;
   }
 
-  if (write_u8(&bwf->info, x_min) != 0 ||
-      write_u8(&bwf->info, x_size) != 0 ||
-      write_u8(&bwf->info, y_min) != 0 ||
-      write_u8(&bwf->info, y_size) != 0)
+  if (write_u8(&bwf->bff, x_min) != 0 ||
+      write_u8(&bwf->bff, x_size) != 0 ||
+      write_u8(&bwf->bff, y_min) != 0 ||
+      write_u8(&bwf->bff, y_size) != 0)
     return 1;
   for (int y = 0; y < y_size; y++) {
     for (int x = 0; x < x_size; x++) {
-      if (write_u16(&bwf->info, tiles[y_min + y][x_min + x]) != 0)
+      if (write_u16(&bwf->bff, tiles[y_min + y][x_min + x]) != 0)
         return 1;
     }
   }
   return 0;
 }
 
-static int write_bwf_room(struct BWF_SAVE_INFO *bwf, struct ROOM_INFO *room_info)
+static int write_bwf_room(struct BWF_WRITER *bwf, struct ROOM_INFO *room_info)
 {
   struct EDITOR_ROOM *room = room_info->room;
   
   printf("-> writing room %d (%s)\n", room->serialization_index, room->name);
 
-  room_info->file_offset = bwf->info.cur_file_offset;
+  room_info->file_offset = bwf->bff.cur_file_offset;
 
-  if (write_f32(&bwf->info, room->pos[0]) != 0 ||
-      write_f32(&bwf->info, room->pos[1]) != 0 ||
-      write_f32(&bwf->info, room->pos[2]) != 0) {
+  if (write_f32(&bwf->bff, room->pos[0]) != 0 ||
+      write_f32(&bwf->bff, room->pos[1]) != 0 ||
+      write_f32(&bwf->bff, room->pos[2]) != 0) {
     printf("** ERROR: can't write room position\n");
     return 1;
   }
@@ -429,7 +440,7 @@ static int write_bwf_room(struct BWF_SAVE_INFO *bwf, struct ROOM_INFO *room_info
     printf("** ERROR: can't read model from '%s'\n", filename);
     return 1;
   }
-  if (write_model_meshes(&bwf->info, &model, room_info) != 0) {
+  if (write_model_meshes(&bwf->bff, &model, room_info) != 0) {
     printf("** ERROR: can't write room model\n");
     free_model(&model);
     return 1;
@@ -439,7 +450,7 @@ static int write_bwf_room(struct BWF_SAVE_INFO *bwf, struct ROOM_INFO *room_info
   return 0;
 }
 
-static int write_bwf_image(struct BWF_SAVE_INFO *bwf, struct IMAGE_INFO *image)
+static int write_bwf_image(struct BWF_WRITER *bwf, struct IMAGE_INFO *image)
 {
   char filename[256];
   snprintf(filename, sizeof(filename), "data/%s.glb", image->room_info->room->name);
@@ -470,8 +481,8 @@ static int write_bwf_image(struct BWF_SAVE_INFO *bwf, struct IMAGE_INFO *image)
     return 1;
   }
 
-  image->file_offset = bwf->info.cur_file_offset;
-  if (write_data(&bwf->info, data, image_length) != 0) {
+  image->file_offset = bwf->bff.cur_file_offset;
+  if (write_data(&bwf->bff, data, image_length) != 0) {
     printf("** ERROR: can't write image data\n");
     free(data);
     return 1;
@@ -481,39 +492,39 @@ static int write_bwf_image(struct BWF_SAVE_INFO *bwf, struct IMAGE_INFO *image)
   return 0;
 }
 
-static int write_bwf_index(struct BWF_SAVE_INFO *bwf)
+static int write_bwf_index(struct BWF_WRITER *bwf)
 {
   printf("-> writing index\n");
 
-  size_t index_offset = bwf->info.cur_file_offset;
+  size_t index_offset = bwf->bff.cur_file_offset;
   
-  if (write_u32(&bwf->info, bwf->n_rooms) != 0) {
+  if (write_u32(&bwf->bff, bwf->n_rooms) != 0) {
     printf("** ERROR: can't write room index\n");
     return 1;
   }
   for (int i = 0; i < bwf->n_rooms; i++) {
-    if (write_u32(&bwf->info, bwf->rooms[i].file_offset) != 0) {
+    if (write_u32(&bwf->bff, bwf->rooms[i].file_offset) != 0) {
       printf("** ERROR: can't write room index\n");
       return 1;
     }
   }
 
-  if (write_u32(&bwf->info, bwf->n_images) != 0) {
+  if (write_u32(&bwf->bff, bwf->n_images) != 0) {
     printf("** ERROR: can't write image index\n");
     return 1;
   }
   for (int i = 0; i < bwf->n_images; i++) {
-    if (write_u32(&bwf->info, bwf->images[i].file_offset) != 0) {
+    if (write_u32(&bwf->bff, bwf->images[i].file_offset) != 0) {
       printf("** ERROR: can't write image index\n");
       return 1;
     }
   }
 
-  if (set_file_pos(&bwf->info, 4) != 0) {
+  if (set_file_pos(&bwf->bff, 4) != 0) {
     printf("** ERROR: can't seek to header\n");
     return 1;
   }
-  if (write_u32(&bwf->info, index_offset) != 0) {
+  if (write_u32(&bwf->bff, index_offset) != 0) {
     printf("** ERROR: can't write index offset to header\n");
     return 1;
   }
@@ -523,38 +534,35 @@ static int write_bwf_index(struct BWF_SAVE_INFO *bwf)
 
 int write_bwf_file(const char *filename, struct EDITOR_ROOM_LIST *rooms)
 {
-  struct BWF_SAVE_INFO info;
-  init_bwf_save_info(&info, get_bwf_tex_index);
-
-  info.info.f = fopen(filename, "wb");
-  if (! info.info.f) {
-    printf("** ERROR: can't open '%s'\n", filename);
-    goto err;
+  struct BWF_WRITER bwf;
+  if (open_bwf(&bwf, filename, get_bwf_tex_index) != 0) {
+    printf("** ERROR opening file '%s'\n", filename);
+    return 1;
   }
 
-  info.rooms = create_room_info(rooms, &info.n_rooms);
-  if (! info.rooms) {
+  bwf.rooms = create_room_info(rooms, &bwf.n_rooms);
+  if (! bwf.rooms) {
     printf("** ERROR: out of memory for rooms info\n");
     goto err;
   }
   
-  if (write_bwf_header(&info) != 0)
+  if (write_bwf_header(&bwf) != 0)
     goto err;
   
-  for (int i = 0; i < info.n_rooms; i++) {
-    if (write_bwf_room(&info, &info.rooms[i]) != 0)
+  for (int i = 0; i < bwf.n_rooms; i++) {
+    if (write_bwf_room(&bwf, &bwf.rooms[i]) != 0)
       goto err;
   }
 
-  for (int i = 0; i < info.n_images; i++) {
-    if (write_bwf_image(&info, &info.images[i]) != 0)
+  for (int i = 0; i < bwf.n_images; i++) {
+    if (write_bwf_image(&bwf, &bwf.images[i]) != 0)
       goto err;
   }
 
-  if (write_bwf_index(&info) != 0)
+  if (write_bwf_index(&bwf) != 0)
     goto err;
   
-  if (free_bwf_save_info(&info) != 0) {
+  if (close_bwf(&bwf) != 0) {
     printf("** ERROR writing file data\n");
     return 1;
   }
@@ -563,6 +571,6 @@ int write_bwf_file(const char *filename, struct EDITOR_ROOM_LIST *rooms)
   return 0;
 
  err:
-  free_bwf_save_info(&info);
+  close_bwf(&bwf);
   return 1;
 }

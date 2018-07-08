@@ -7,7 +7,7 @@ EDITOR_OBJS = main.obj editor.obj room.obj save.obj load.obj render.obj gfx.obj 
               model.obj gltf.obj shader.obj camera.obj json.obj base64.obj text.obj image.obj
 EDITOR_LIBS = $(GLFW_HOME)\lib-vc2015\glfw3dll.lib
 
-BUILDER_OBJS = builder.obj room.obj load.obj save_bff.obj matrix.obj model.obj gltf.obj json.obj base64.obj text_stdio.obj image.obj
+BUILDER_OBJS = builder.obj room.obj load.obj bff.obj matrix.obj model.obj gltf.obj json.obj base64.obj text_stdio.obj image.obj
 BUILDER_LIBS =
 
 all: editor.exe builder.exe

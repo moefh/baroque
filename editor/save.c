@@ -61,8 +61,8 @@ static void write_string(FILE *f, const char *str, const char *suffix)
       }
       fputc('\\', f);
       fputc('u', f);
-      fputc(to_hex_digit((*p >> 12) & 0xf), f);
-      fputc(to_hex_digit((*p >> 8 ) & 0xf), f);
+      fputc('0', f);
+      fputc('0', f);
       fputc(to_hex_digit((*p >> 4 ) & 0xf), f);
       fputc(to_hex_digit((*p      ) & 0xf), f);
       break;
