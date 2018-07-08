@@ -14,7 +14,7 @@ struct IMAGE_INFO {
   uint32_t index;
   char name[256];
   struct ROOM_INFO *room_info;
-  int tex_index;
+  int model_tex_index;
   size_t file_offset;
 };
 
@@ -100,7 +100,7 @@ static struct IMAGE_INFO *get_image(struct SAVE_INFO *s, struct MODEL_TEXTURE *t
   image->index = s->n_images++;
   strcpy(image->name, image_name);
   image->room_info = room_info;
-  image->tex_index = tex_index;
+  image->model_tex_index = tex_index;
   image->file_offset = 0;
   return image;
 }
@@ -170,7 +170,7 @@ static int write_f32(struct SAVE_INFO *s, float n)
   } pun;
 
   pun.f = n;
-  return write_u32(s, pun.f);
+  return write_u32(s, pun.u);
 }
 
 static int write_mat4(struct SAVE_INFO *s, float *mat)
@@ -225,8 +225,8 @@ static int write_bff_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256])
     x_min = y_min = 0;
     x_size = y_size = 0;
   } else {
-    x_size = x_max - x_min;
-    y_size = y_max - y_min;
+    x_size = x_max - x_min + 1;
+    y_size = y_max - y_min + 1;
   }
 
   if (write_u8(s, x_min) != 0 ||
@@ -234,12 +234,26 @@ static int write_bff_room_tiles(struct SAVE_INFO *s, uint16_t (*tiles)[256])
       write_u8(s, y_min) != 0 ||
       write_u8(s, y_size) != 0)
     return 1;
-  for (int y = y_min; y <= y_max; y++) {
-    for (int x = x_min; x <= x_max; x++) {
-      if (write_u16(s, tiles[y][x]) != 0)
+  for (int y = 0; y < y_size; y++) {
+    for (int x = 0; x < x_size; x++) {
+      if (write_u16(s, tiles[y_min + y][x_min + x]) != 0)
         return 1;
     }
   }
+  return 0;
+}
+
+static int get_global_tex_index(struct SAVE_INFO *s, struct ROOM_INFO *room_info, struct MODEL_TEXTURE *textures, int local_tex_index, uint32_t *global_tex_index)
+{
+  if (local_tex_index == MODEL_TEXTURE_NONE) {
+    *global_tex_index = 0xffffffff;
+    return 0;
+  }
+  
+  struct IMAGE_INFO *image = get_image(s, &textures[local_tex_index], room_info, local_tex_index);
+  if (! image)
+    return 1;
+  *global_tex_index = image->index;
   return 0;
 }
 
@@ -250,29 +264,26 @@ static int write_bff_model(struct SAVE_INFO *s, struct MODEL *model, struct ROOM
 
   for (int i = 0; i < model->n_meshes; i++) {
     struct MODEL_MESH *mesh = model->meshes[i];
+
+    uint32_t tex0_index, tex1_index;
+    if (get_global_tex_index(s, room_info, model->textures, mesh->tex0_index, &tex0_index) != 0 ||
+        get_global_tex_index(s, room_info, model->textures, mesh->tex1_index, &tex1_index) != 0)
+      return 1;
+
+    printf("will write model stuff (including matrix)\n");
     if (write_u32(s, mesh->vtx_size) != 0 ||
         write_u32(s, mesh->ind_size) != 0 ||
         write_u32(s, mesh->ind_count) != 0 ||
-        write_u16(s, mesh->tex0_index) != 0 ||
-        write_u16(s, mesh->tex1_index) != 0 ||
         write_u16(s, mesh->vtx_type) != 0 ||
         write_u16(s, mesh->ind_type) != 0 ||
+        write_u32(s, tex0_index) != 0 ||
+        write_u32(s, tex1_index) != 0 ||
         write_mat4(s, mesh->matrix) != 0 ||
         write_data(s, mesh->vtx, mesh->vtx_size) != 0 ||
         write_data(s, mesh->ind, mesh->ind_size) != 0)
       return 1;
   }
 
-  if (write_u16(s, model->n_textures) != 0)
-    return 1;
-
-  for (int i = 0; i < model->n_textures; i++) {
-    struct MODEL_TEXTURE *tex = &model->textures[i];
-    struct IMAGE_INFO *image = get_image(s, tex, room_info, i);
-    if (! image || write_u32(s, image->index) != 0)
-      return 1;
-  }
-  
   return 0;
 }
 
@@ -329,12 +340,12 @@ static int write_bff_image(struct SAVE_INFO *s, struct IMAGE_INFO *image)
     printf("** ERROR: can't read model images from '%s'\n", filename);
     return 1;
   }
-  if (image->tex_index >= model.n_textures) {
-    printf("** ERROR: invalid image %d for file '%s'\n", image->tex_index, filename);
+  if (image->model_tex_index >= model.n_textures) {
+    printf("** ERROR: invalid image %d for file '%s'\n", image->model_tex_index, filename);
     free_model(&model);
     return 1;
   }
-  struct MODEL_TEXTURE *tex = &model.textures[image->tex_index];
+  struct MODEL_TEXTURE *tex = &model.textures[image->model_tex_index];
   printf("-> writing image %d (%s)\n", image->index, (char*)tex->data);
   uint32_t image_offset = tex->width;
   uint32_t image_length = tex->height;
@@ -351,7 +362,7 @@ static int write_bff_image(struct SAVE_INFO *s, struct IMAGE_INFO *image)
   }
 
   image->file_offset = s->cur_file_offset;
-  if (write_data(s, data, tex->height) != 0) {
+  if (write_data(s, data, image_length) != 0) {
     printf("** ERROR: can't write image data\n");
     free(data);
     goto err;
@@ -386,7 +397,7 @@ static int write_bff_index(struct SAVE_INFO *s)
     printf("** ERROR: can't write image index\n");
     return 1;
   }
-  for (int i = 0; i < s->n_rooms; i++) {
+  for (int i = 0; i < s->n_images; i++) {
     if (write_u32(s, s->images[i].file_offset) != 0) {
       printf("** ERROR: can't write image index\n");
       return 1;
