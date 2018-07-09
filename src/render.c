@@ -16,6 +16,7 @@
 #include "game.h"
 #include "gfx.h"
 #include "bff.h"
+#include "room.h"
 
 struct GFX_SHADER {
   GLuint id;
@@ -69,18 +70,6 @@ static int load_shader(void)
 
 static int load_models(void)
 {
-  struct BWF_READER bwf;
-  if (open_bwf(&bwf, "data/world.bwf") != 0) {
-    debug("** ERROR: can't open data/world.bmf\n");
-    return 1;
-  }
-  if (load_bwf_room(&bwf, 5) != 0) {
-    debug("** ERROR: can't load room\n");
-    close_bwf(&bwf);
-    return 1;
-  }
-  close_bwf(&bwf);
-
   if (load_bmf("data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
     debug("** ERROR: can't load player model from data/player.bmf\n");
     return 1;
@@ -155,7 +144,13 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   float mat_model[16];
   switch (mesh->type) {
   case GFX_MESH_TYPE_ROOM:
-    mat4_copy(mat_model, mesh->matrix);
+    {
+      mat4_copy(mat_model, mesh->matrix);
+      struct ROOM *room = mesh->data;
+      mat_model[ 3] += room->pos[0];
+      mat_model[ 7] += room->pos[1];
+      mat_model[11] += room->pos[2];
+    }
     break;
 
   case GFX_MESH_TYPE_CREATURE:
@@ -282,7 +277,13 @@ void render_screen(void)
   GL_CHECK(glUseProgram(font_shader.id));
   GL_CHECK(glUniform1i(font_shader.uni_tex1, 0));
 
-  char fps[1024];
-  snprintf(fps, sizeof(fps), "%4.1f fps", game.fps_counter.fps);
-  render_text(0, 0, 1, fps, 0);
+  char text[1024];
+  snprintf(text, sizeof(text), "%4.1f fps", fps_counter.fps);
+  render_text(0, 0, 1, text, 0);
+
+  if (game.show_camera_info) {
+    snprintf(text, sizeof(text), "cam.dist=+%f, cam.theta=%+f, cam.phi=%+f, fov=%+f\n",
+             game.camera.distance, game.camera.theta, game.camera.phi, game.camera.fovy/M_PI*180);
+    render_text(0, 1, 1, text, 0);
+  }
 }

@@ -8,9 +8,14 @@
 #include "gamepad.h"
 #include "camera.h"
 #include "matrix.h"
+#include "bff.h"
+#include "room.h"
 
 struct GAME game;
 struct GAMEPAD gamepad;
+struct FPS_COUNTER fps_counter;
+
+static struct BWF_READER bwf_reader;
 
 #define MOVE_SPEED (1.0 / 20.0)
 
@@ -61,11 +66,95 @@ void handle_game_key(int key, int press, int mods)
     game.quit = 1;
 }
 
-void init_game(int width, int height)
+static void unload_unused_room(void)
+{
+  mark_all_rooms(0);
+
+  if (game.current_room) {
+    game.current_room->mark = 1;
+    for (int i = 0; i < game.current_room->n_neighbors; i++)
+      game.current_room->neighbor[i]->mark = 1;
+  }
+  
+  struct ROOM *unused = get_marked_room(0);
+  if (unused) {
+    gfx_free_meshes(GFX_MESH_TYPE_ROOM, unused->index);
+    free_room(unused);
+  }
+}
+
+static struct ROOM *load_room(int room_index)
+{
+  struct ROOM *room = alloc_room();
+  if (! room) {
+    debug("** ERROR: out of memory for room %d\n", room_index);
+    return NULL;
+  }
+  room->index = room_index;
+  if (load_bwf_room(&bwf_reader, room) != 0) {
+    debug("** ERROR: can't load room\n");
+    close_bwf(&bwf_reader);
+    return NULL;
+  }
+  for (int i = 0; i < room->n_neighbors; i++)
+    room->neighbor[i] = NULL;
+  return room;
+}
+
+static int load_room_neighbors(struct ROOM *room)
+{
+  for (int i = 0; i < room->n_neighbors; i++) {
+    if (room->neighbor[i])
+      continue;
+    
+    room->neighbor[i] = get_room_by_index(room->neighbor_index[i]);
+    if (room->neighbor[i])
+      continue;
+
+    room->neighbor[i] = load_room(room->neighbor_index[i]);
+    if (room->neighbor[i])
+      continue;
+
+    debug("** ERROR: can't load room %d (neighbor of %d)\n", room->neighbor_index[i], room->index);
+    return 1;
+  }
+  return 0;
+}
+
+static int change_current_room(int room_index)
+{
+  struct ROOM *room = get_room_by_index(room_index);
+  if (! room) {
+    if (! has_free_room())
+      unload_unused_room();
+    room = load_room(room_index);
+    if (! room)
+      return 1;
+  }
+  game.current_room = room;
+  return load_room_neighbors(room);
+}
+
+int init_game(int width, int height)
 {
   game.quit = 0;
   init_camera(&game.camera, width, height);
   game.camera.distance = 10;
+
+  init_room_store();
+  if (open_bwf(&bwf_reader, "data/world.bwf") != 0) {
+    debug("** ERROR: can't open data/world.bmf\n");
+    return 1;
+  }
+  if (change_current_room(3) != 0)
+    return 1;
+  vec3_copy(game.creatures[0].pos, game.current_room->pos);
+  return 0;
+}
+
+void close_game(void)
+{
+  close_bwf(&bwf_reader);
 }
 
 static float apply_dead_zone(float val)
@@ -88,12 +177,7 @@ static void handle_input(void)
     return;
   //dump_gamepad_state(&gamepad);
   
-  if (gamepad.btn_pressed[PAD_BTN_BACK])
-    console("%4.1f fps\n", game.fps_counter.fps);
-
-  if (gamepad.btn_pressed[PAD_BTN_START])
-    console("cam.dist=+%f, cam.theta=%+f, cam.phi=%+f, fov=%+f\n",
-            game.camera.distance, game.camera.theta, game.camera.phi, game.camera.fovy/M_PI*180);
+  game.show_camera_info = gamepad.btn_state[PAD_BTN_START];
   
   if (gamepad.btn_state[PAD_BTN_LB]) game.camera.fovy -= 0.01;
   if (gamepad.btn_state[PAD_BTN_RB]) game.camera.fovy += 0.01;

@@ -59,17 +59,20 @@ struct CREATURE {
 
 struct GAME {
   int quit;
-  struct FPS_COUNTER fps_counter;
+  int show_camera_info;
   struct CAMERA camera;
   struct CREATURE creatures[MAX_CREATURES];
+  struct ROOM *current_room;
 };
 
-void init_game(int width, int height);
+int init_game(int width, int height);
+void close_game(void);
 void handle_game_key(int key, int press, int mods);
 int process_game_step(void);
 void get_light_pos(float *light_pos);
 
 extern struct GAME game;
 extern struct GAMEPAD gamepad;
+extern struct FPS_COUNTER fps_counter;
 
 #endif /* GAME_H_FILE */

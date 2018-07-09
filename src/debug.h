@@ -3,9 +3,7 @@
 #ifndef DEBUG_H_FILE
 #define DEBUG_H_FILE
 
-#ifdef _MSC_VER
-#define __attribute__(x)
-#endif
+#include "defs.h"
 
 void init_debug(void);
 void debug(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

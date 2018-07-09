@@ -92,19 +92,19 @@ static void cleanup_gfx(void)
 
 static void update_fps_counter(void)
 {
-  if (game.fps_counter.n_frames == 0) {
-    game.fps_counter.start_time = glfwGetTime();
-    game.fps_counter.n_frames++;
+  if (fps_counter.n_frames == 0) {
+    fps_counter.start_time = glfwGetTime();
+    fps_counter.n_frames++;
     return;
   }
 
-  double time_elapsed = glfwGetTime() - game.fps_counter.start_time;
+  double time_elapsed = glfwGetTime() - fps_counter.start_time;
   if (time_elapsed >= 1.0) {
-    game.fps_counter.fps = game.fps_counter.n_frames / time_elapsed;
-    game.fps_counter.n_frames = 0;
+    fps_counter.fps = fps_counter.n_frames / time_elapsed;
+    fps_counter.n_frames = 0;
     return;
   }
-  game.fps_counter.n_frames++;
+  fps_counter.n_frames++;
 }
 
 int main(void)
@@ -121,7 +121,8 @@ int main(void)
   glfwGetWindowSize(window, &width, &height);
   if (render_setup(width, height) != 0)
     goto err;
-  init_game(width, height);
+  if (init_game(width, height) != 0)
+    goto err;
   
   debug("- Running main loop...\n");
   while (1) {
@@ -138,6 +139,7 @@ int main(void)
   ret = 0;
   
  err:
+  close_game();
   debug("- Cleaning up GFX...\n");
   cleanup_gfx();
 

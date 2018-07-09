@@ -12,6 +12,7 @@
 #include "gfx.h"
 #include "model.h"
 #include "matrix.h"
+#include "room.h"
 
 #define MAX_ROOM_MESHES  256
 
@@ -264,10 +265,10 @@ static int read_bwf_index(struct BWF_READER *bwf)
   return 0;
 }
 
-static int load_bwf_mesh(struct BWF_READER *bwf, int room)
+static int load_bwf_mesh(struct BWF_READER *bwf, struct ROOM *room)
 {
   uint32_t tex0_index, tex1_index;
-  struct GFX_MESH *gfx_mesh = load_bff_mesh(&bwf->bff, GFX_MESH_TYPE_ROOM, room, NULL, &tex0_index, &tex1_index);
+  struct GFX_MESH *gfx_mesh = load_bff_mesh(&bwf->bff, GFX_MESH_TYPE_ROOM, room->index, room, &tex0_index, &tex1_index);
   if (! gfx_mesh)
     return 1;
 
@@ -292,45 +293,46 @@ static int load_bwf_mesh(struct BWF_READER *bwf, int room)
   return 0;
 }
 
-static int read_bwf_room_info(struct BWF_READER *bwf)
+static int read_bwf_room_info(struct BWF_READER *bwf, struct ROOM *room)
 {
-  /* This is a hack: we currently discard all room info. This should
-   * be saved in a global room info storage somewhere.
-   */
-  
-  float pos[3];
-  if (read_f32_vec(&bwf->bff, pos, 3) != 0)
+  if (read_f32_vec(&bwf->bff, room->pos, 3) != 0)
     return 1;
 
   uint8_t n_neighbors;
   if (read_u8(&bwf->bff, &n_neighbors) != 0)
     return 1;
+  room->n_neighbors = n_neighbors;
   for (uint8_t i = 0; i < n_neighbors; i++) {
-    uint32_t neighbor_index;
-    if (read_u32(&bwf->bff, &neighbor_index) != 0)
+    if (read_u32(&bwf->bff, &room->neighbor_index[i]) != 0)
       return 1;
   }
 
-  uint8_t tiles_dim[4];
-  if (read_data(&bwf->bff, tiles_dim, 4) != 0)
+  memset(room->tiles, 0, sizeof(room->tiles));
+  uint8_t x_tiles_start, x_tiles_size;
+  uint8_t y_tiles_start, y_tiles_size;
+  if (read_u8(&bwf->bff, &x_tiles_start) != 0 ||
+      read_u8(&bwf->bff, &x_tiles_size) != 0 ||
+      read_u8(&bwf->bff, &y_tiles_start) != 0 ||
+      read_u8(&bwf->bff, &y_tiles_size) != 0)
     return 1;
-  int tiles_size = 2 * (int)tiles_dim[1] * (int)tiles_dim[3];
-  static uint16_t tiles[256][256];
-  if (read_data(&bwf->bff, tiles, tiles_size) != 0)
-    return 1;
-  
+  for (int y = 0; y < y_tiles_size; y++) {
+    for (int x = 0; x < x_tiles_size; x++) {
+      if (read_u16(&bwf->bff, &room->tiles[y][x]) != 0)
+        return 1;
+    }
+  }
   return 0;
 }
 
-int load_bwf_room(struct BWF_READER *bwf, int room)
+int load_bwf_room(struct BWF_READER *bwf, struct ROOM *room)
 {
-  if (room < 0 || (uint32_t)room >= bwf->n_rooms)
+  if (room->index < 0 || (uint32_t)room->index >= bwf->n_rooms)
     return 1;
 
-  if (set_file_pos(&bwf->bff, bwf->room_off[room]) != 0)
+  if (set_file_pos(&bwf->bff, bwf->room_off[room->index]) != 0)
     return 1;
 
-  if (read_bwf_room_info(bwf) != 0)
+  if (read_bwf_room_info(bwf, room) != 0)
     return 1;
   
   uint16_t n_meshes;

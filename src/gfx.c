@@ -12,6 +12,13 @@
 #include "model.h"
 #include "font.h"
 
+//#define DEBUG_GFX
+#ifdef DEBUG_GFX
+#define debug_log console
+#else
+#define debug_log(...)
+#endif
+
 int num_gfx_meshes;
 int num_gfx_textures;
 struct GFX_MESH gfx_meshes[NUM_GFX_MESHES];
@@ -19,7 +26,7 @@ struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
 void gfx_free_texture(struct GFX_TEXTURE *tex)
 {
-  //console("-> freeing texture id %u\n", tex->id);
+  debug_log("-> freeing texture id %u\n", tex->id);
   glDeleteTextures(1, &tex->id);
   tex->use_count = 0;
 }
@@ -40,12 +47,12 @@ void gfx_free_mesh(struct GFX_MESH *gfx)
 
 int gfx_free_meshes(uint32_t type, uint32_t info)
 {
-  //console("-> freeing all meshes with type=%u, info=%u\n", type, info);
+  debug_log("-> freeing all meshes with type=%u, info=%u\n", type, info);
   int n_released_meshes = 0;
   for (int i = 0; i < num_gfx_meshes; i++) {
     struct GFX_MESH *gfx = &gfx_meshes[i];
     if (gfx->use_count != 0 && gfx->type == type && gfx->info == info) {
-      //console("-> freeing mesh %d\n", i);
+      debug_log("-> freeing mesh %d\n", i);
       n_released_meshes++;
       gfx_free_mesh(gfx);
     }
@@ -59,7 +66,7 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
   struct GFX_MESH *gfx = NULL;
   for (int i = 0; i < num_gfx_meshes; i++) {
     if (gfx_meshes[i].use_count == 0) {
-      //console("-> uploading mesh %d\n", i);
+      debug_log("-> uploading mesh %d\n", i);
       gfx = &gfx_meshes[i];
       break;
     }
@@ -67,7 +74,7 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
   if (! gfx) {
     if (num_gfx_meshes >= NUM_GFX_MESHES)
       return NULL;
-    //console("-> uploading mesh %d\n", num_gfx_meshes);
+    debug_log("-> uploading mesh %d\n", num_gfx_meshes);
     gfx = &gfx_meshes[num_gfx_meshes++];
   }
   gfx->use_count = 1;
@@ -176,7 +183,7 @@ struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture, unsi
   gfx->use_count = 1;
   
   GL_CHECK(glGenTextures(1, &gfx->id));
-  //console("-> uploading texture id %d\n", gfx->id);
+  debug_log("-> uploading texture id %d\n", gfx->id);
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, gfx->id));
 
   if (flags & GFX_TEX_FLAG_NO_REPEAT) {
@@ -215,7 +222,7 @@ int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *da
   for (int i = 0; i < model->n_meshes; i++) {
     struct GFX_MESH *mesh = gfx_upload_model_mesh(model->meshes[i], type, info, data);
     if (! mesh) {
-      console("** ERROR: can't upload mesh\n");
+      debug_log("** ERROR: can't upload mesh\n");
       return 1;
     }
 
@@ -225,7 +232,7 @@ int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *da
       if (! tex) {
         tex = gfx_upload_model_texture(&model->textures[tex_num], 0);
         if (! tex) {
-          console("** ERROR: can't upload texture\n");
+          debug_log("** ERROR: can't upload texture\n");
           return 1;
         }
         gfx_textures[tex_num] = tex;

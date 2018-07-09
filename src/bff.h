@@ -10,7 +10,7 @@
 #define BWF_MAX_TEXTURES 1024
 
 struct BFF_READER {
-  FILE *f;
+  void *f;
 };
 
 struct BWF_READER {
@@ -22,9 +22,11 @@ struct BWF_READER {
   int texture_index[BWF_MAX_TEXTURES];
 };
 
+struct ROOM;
+
 int open_bwf(struct BWF_READER *bwf, const char *filename);
 void close_bwf(struct BWF_READER *bwf);
-int load_bwf_room(struct BWF_READER *bwf, int room);
+int load_bwf_room(struct BWF_READER *bwf, struct ROOM *room);
 
 int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data);
 
