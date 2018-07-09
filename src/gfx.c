@@ -222,7 +222,7 @@ int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *da
   for (int i = 0; i < model->n_meshes; i++) {
     struct GFX_MESH *mesh = gfx_upload_model_mesh(model->meshes[i], type, info, data);
     if (! mesh) {
-      debug_log("** ERROR: can't upload mesh\n");
+      debug("** ERROR: can't upload mesh\n");
       return 1;
     }
 
@@ -232,7 +232,7 @@ int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *da
       if (! tex) {
         tex = gfx_upload_model_texture(&model->textures[tex_num], 0);
         if (! tex) {
-          debug_log("** ERROR: can't upload texture\n");
+          debug("** ERROR: can't upload texture\n");
           return 1;
         }
         gfx_textures[tex_num] = tex;

@@ -1,6 +1,7 @@
 /* game.c */
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <math.h>
 
 #include "game.h"
@@ -66,7 +67,7 @@ void handle_game_key(int key, int press, int mods)
     game.quit = 1;
 }
 
-static void unload_unused_room(void)
+static void unload_unused_rooms(bool unload_all)
 {
   mark_all_rooms(0);
 
@@ -75,11 +76,15 @@ static void unload_unused_room(void)
     for (int i = 0; i < game.current_room->n_neighbors; i++)
       game.current_room->neighbor[i]->mark = 1;
   }
-  
-  struct ROOM *unused = get_marked_room(0);
-  if (unused) {
+
+  while (1) {
+    struct ROOM *unused = get_marked_room(0);
+    if (! unused)
+      break;
     gfx_free_meshes(GFX_MESH_TYPE_ROOM, unused->index);
     free_room(unused);
+    if (! unload_all)
+      break;
   }
 }
 
@@ -104,9 +109,6 @@ static struct ROOM *load_room(int room_index)
 static int load_room_neighbors(struct ROOM *room)
 {
   for (int i = 0; i < room->n_neighbors; i++) {
-    if (room->neighbor[i])
-      continue;
-    
     room->neighbor[i] = get_room_by_index(room->neighbor_index[i]);
     if (room->neighbor[i])
       continue;
@@ -121,32 +123,61 @@ static int load_room_neighbors(struct ROOM *room)
   return 0;
 }
 
-static int change_current_room(int room_index)
+static int set_current_room(int room_index)
 {
   struct ROOM *room = get_room_by_index(room_index);
   if (! room) {
     if (! has_free_room())
-      unload_unused_room();
+      unload_unused_rooms(false);
     room = load_room(room_index);
     if (! room)
       return 1;
   }
   game.current_room = room;
-  return load_room_neighbors(room);
+  if (load_room_neighbors(room) != 0)
+    return 1;
+  unload_unused_rooms(true);
+  return 0;
+}
+
+static void check_room_change(void)
+{
+  /*
+   * HACK: just find the closest loaded room to the player character
+   * and make it the current room. We really should use the tiles to
+   * check for room transitions, but that's not yet implemented in the
+   * editor).
+   */
+  float *player_pos = game.creatures[0].pos;
+  
+  struct ROOM *closest_room = NULL;
+  float closest_dist = 0;
+  for (struct ROOM *room = get_room_list(); room != NULL; room = room->next) {
+    float dist = ((room->pos[0] - player_pos[0]) * (room->pos[0] - player_pos[0]) +
+                  (room->pos[1] - player_pos[1]) * (room->pos[1] - player_pos[1]) +
+                  (room->pos[2] - player_pos[2]) * (room->pos[2] - player_pos[2]));
+    if (closest_room == NULL || dist < closest_dist) {
+      closest_room = room;
+      closest_dist = dist;
+    }
+  }
+
+  if (closest_room && closest_room != game.current_room)
+    set_current_room(closest_room->index);
 }
 
 int init_game(int width, int height)
 {
   game.quit = 0;
   init_camera(&game.camera, width, height);
-  game.camera.distance = 10;
+  game.camera.distance = 6.0;
 
   init_room_store();
   if (open_bwf(&bwf_reader, "data/world.bwf") != 0) {
     debug("** ERROR: can't open data/world.bmf\n");
     return 1;
   }
-  if (change_current_room(3) != 0)
+  if (set_current_room(0) != 0)
     return 1;
   vec3_copy(game.creatures[0].pos, game.current_room->pos);
   return 0;
@@ -227,6 +258,8 @@ int process_game_step(void)
 {
   handle_input();
 
+  check_room_change();
+  
   vec3_load(game.camera.center,
             game.creatures[0].pos[0],
             game.creatures[0].pos[1] + 0.8,

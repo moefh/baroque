@@ -38,8 +38,22 @@ struct ROOM *alloc_room(void)
 
 void free_room(struct ROOM *room)
 {
+  // remove from alloc list
+  struct ROOM **p = &room_store.alloc_list;
+  while (*p && *p != room)
+    p = &(*p)->next;
+  if (! *p)
+    return;
+  *p = room->next;
+
+  // add to free list
   room->next = room_store.free_list;
   room_store.free_list = room;
+}
+
+struct ROOM *get_room_list(void)
+{
+  return room_store.alloc_list;
 }
 
 struct ROOM *get_room_by_index(int index)

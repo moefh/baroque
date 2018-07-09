@@ -25,6 +25,8 @@ struct ROOM {
 void init_room_store(void);
 struct ROOM *alloc_room(void);
 void free_room(struct ROOM *room);
+
+struct ROOM *get_room_list(void);
 struct ROOM *get_room_by_index(int index);
 
 bool has_free_room(void);
