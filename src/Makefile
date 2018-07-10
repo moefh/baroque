@@ -15,7 +15,7 @@ CFLAGS = $(OS_CFLAGS) -O2 -Wall -Wextra -Wno-unused-parameter -Wno-cast-function
 LDFLAGS = $(OS_LDFLAGS)
 
 OBJS = main.o render.o bff.o gfx.o game.o model.o font.o shader.o debug.o glad.o gl_error.o \
-       image.o matrix.o gamepad.o camera.o room.o
+       image.o matrix.o gamepad.o camera.o room.o file.o
 LIBS = $(OS_LIBS) -lm
 
 all: game

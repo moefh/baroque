@@ -52,5 +52,6 @@ struct MODEL {
 };
 
 struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t ind_type, uint32_t ind_size, uint32_t ind_count);
+void init_model_mesh(struct MODEL_MESH *mesh, uint8_t vtx_type, uint32_t vtx_size, uint8_t ind_type, uint32_t ind_size, uint32_t ind_count);
 
 #endif /* MODEL_H_FILE */

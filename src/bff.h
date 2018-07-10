@@ -5,16 +5,13 @@
 
 #include <stdint.h>
 #include "gfx.h"
+#include "file.h"
 
 #define BWF_MAX_ROOMS    1024
 #define BWF_MAX_TEXTURES 1024
 
-struct BFF_READER {
-  void *f;
-};
-
 struct BWF_READER {
-  struct BFF_READER bff;
+  struct FILE_READER file;
   uint32_t n_rooms;
   uint32_t room_off[BWF_MAX_ROOMS];
   uint32_t n_textures;
