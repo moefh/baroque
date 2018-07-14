@@ -17,6 +17,7 @@ struct GAMEPAD gamepad;
 struct FPS_COUNTER fps_counter;
 
 static struct BWF_READER bwf_reader;
+static int bwf_reader_open;
 
 #define MOVE_SPEED (1.0 / 20.0)
 
@@ -99,6 +100,7 @@ static struct ROOM *load_room(int room_index)
   if (load_bwf_room(&bwf_reader, room) != 0) {
     debug("** ERROR: can't load room\n");
     close_bwf(&bwf_reader);
+    bwf_reader_open = 0;
     return NULL;
   }
   for (int i = 0; i < room->n_neighbors; i++)
@@ -177,6 +179,7 @@ int init_game(int width, int height)
     debug("** ERROR: can't open data/world.bmf\n");
     return 1;
   }
+  bwf_reader_open = 1;
   if (set_current_room(0) != 0)
     return 1;
   vec3_copy(game.creatures[0].pos, game.current_room->pos);
@@ -185,7 +188,8 @@ int init_game(int width, int height)
 
 void close_game(void)
 {
-  close_bwf(&bwf_reader);
+  if (bwf_reader_open)
+    close_bwf(&bwf_reader);
 }
 
 static float apply_dead_zone(float val)

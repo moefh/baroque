@@ -11,6 +11,7 @@
 #include "gamepad.h"
 #include "render.h"
 #include "game.h"
+#include "asset_loader.h"
 
 #define WINDOW_WIDTH   800
 #define WINDOW_HEIGHT  600
@@ -114,6 +115,8 @@ int main(void)
   init_debug();
   if (init_gfx() != 0)
     goto err;
+  if (start_asset_loader() != 0)
+    goto err;
 
   detect_gamepad(&gamepad);
 
@@ -124,11 +127,44 @@ int main(void)
   if (init_game(width, height) != 0)
     goto err;
   
+#if 1
+  for (int i = 0; i < 50; i++) {
+    struct ASSET_LOADER_REQUEST req = {
+      .type = i+1,
+    };
+    send_asset_loader_request(&req);
+  }
+#endif
+
+  int frame = 0;
   debug("- Running main loop...\n");
   while (1) {
+    frame++;
     glfwPollEvents();
     if (glfwWindowShouldClose(window))
       break;
+
+#if 1
+    if (frame % 10 == 0) {
+      static int req_num;
+      req_num++;
+      struct ASSET_LOADER_REQUEST req = {
+        .type = 50 + 1 + req_num,
+      };
+      send_asset_loader_request(&req);
+    }
+#endif
+
+#if 1
+    {
+      //console("-> reading asset reply\n");
+      struct ASSET_LOADER_REQUEST *resp = recv_asset_loader_response();
+      if (resp)
+        console("-> got asset %d\n", resp->type);
+      //else
+      //  console("-> no asset reply\n");
+    }
+#endif
     
     if (process_game_step())
       break;
@@ -139,7 +175,10 @@ int main(void)
   ret = 0;
   
  err:
+  debug("- Closing game...\n");
   close_game();
+  debug("- Stopping asset loader...\n");
+  stop_asset_loader();
   debug("- Cleaning up GFX...\n");
   cleanup_gfx();
 

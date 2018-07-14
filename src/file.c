@@ -10,6 +10,6 @@
 
 #else
 
-#error "Unknown system, can't memory mapped file"
+#error "Unknown system, can't use memory mapped file"
 
 #endif
