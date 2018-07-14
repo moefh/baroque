@@ -5,9 +5,9 @@ OS_CFLAGS = -I$(GLFW_HOME)/include
 OS_LDFLAGS =
 OS_LIBS = -L$(GLFW_HOME)/lib-mingw-w64 -lglfw3 -lgdi32 -lopengl32
 else
-OS_CFLAGS = -g -fsanitize=address -fsanitize=undefined
-OS_LDFLAGS = -g -fsanitize=address -fsanitize=undefined
-OS_LIBS = -L. -lglfw -lGL -ldl
+OS_CFLAGS = -pthread -g -fsanitize=address -fsanitize=undefined
+OS_LDFLAGS = -pthread -g -fsanitize=address -fsanitize=undefined
+OS_LIBS = -L. -lglfw -lGL -lpthread -ldl
 endif
 
 CC = gcc

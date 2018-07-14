@@ -1,28 +1,25 @@
-/* thread_win32.c */
+/* thread_pthreads.c */
 
-#define WIN32_LEAN_AND_MEAN 1
-#define _WIN32_WINNT 0x0600
-
-#include <windows.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
+#include <pthread.h>
+#include <unistd.h>
 
 #include "thread.h"
 #include "queue.h"
 
 struct THREAD {
-  HANDLE handle;
-  DWORD id;
+  pthread_t thread;
   void (*func)(void *data);
   void *func_data;
 };
 
 struct CHANNEL {
-  CRITICAL_SECTION cs;
-  CONDITION_VARIABLE write_event;
-  CONDITION_VARIABLE read_event;
+  pthread_mutex_t mutex;
+  pthread_cond_t write_event;
+  pthread_cond_t read_event;
   struct QUEUE queue;
   void *data;
   bool has_reader;
@@ -31,14 +28,14 @@ struct CHANNEL {
 
 void thread_sleep(unsigned int msec)
 {
-  Sleep(msec);
+  usleep((useconds_t)msec * 1000);
 }
 
-static DWORD WINAPI thread_start_func(void *data)
+static void *thread_start_func(void *data)
 {
   struct THREAD *thread = data;
   thread->func(thread->func_data);
-  return 0;
+  return NULL;
 }
 
 struct THREAD *start_thread(void (*func)(void *data), void *data)
@@ -48,8 +45,7 @@ struct THREAD *start_thread(void (*func)(void *data), void *data)
     return NULL;
   thread->func = func;
   thread->func_data = data;
-  thread->handle = CreateThread(NULL, 0, thread_start_func, thread, 0, &thread->id);
-  if (thread->handle == NULL) {
+  if (pthread_create(&thread->thread, NULL, thread_start_func, thread) != 0) {
     free(thread);
     return NULL;
   }
@@ -58,10 +54,9 @@ struct THREAD *start_thread(void (*func)(void *data), void *data)
 
 int join_thread(struct THREAD *thread)
 {
-  int ret = WaitForSingleObject(thread->handle, INFINITE);
-  CloseHandle(thread->handle);
+  int ret = pthread_join(thread->thread, NULL);
   free(thread);
-  return (ret == WAIT_OBJECT_0) ? 0 : 1;
+  return (ret == 0) ? 0 : 1;
 }
 
 struct CHANNEL *new_chan(size_t capacity, size_t item_size)
@@ -78,12 +73,21 @@ struct CHANNEL *new_chan(size_t capacity, size_t item_size)
   chan->data = malloc(item_size);
   if (! chan->data)
     goto err;
-  
-  InitializeConditionVariable(&chan->read_event);
-  InitializeConditionVariable(&chan->write_event);
-  if (! InitializeCriticalSectionAndSpinCount(&chan->cs, 1024))
+
+  if (pthread_mutex_init(&chan->mutex, NULL) != 0)
     goto err;
 
+  if (pthread_cond_init(&chan->read_event, NULL) != 0) {
+    pthread_mutex_destroy(&chan->mutex);
+    goto err;
+  }
+
+  if (pthread_cond_init(&chan->write_event, NULL) != 0) {
+    pthread_cond_destroy(&chan->read_event);
+    pthread_mutex_destroy(&chan->mutex);
+    goto err;
+  }
+  
   return chan;
 
  err:
@@ -95,7 +99,9 @@ struct CHANNEL *new_chan(size_t capacity, size_t item_size)
 
 void free_chan(struct CHANNEL *chan)
 {
-  DeleteCriticalSection(&chan->cs);
+  pthread_cond_destroy(&chan->write_event);
+  pthread_cond_destroy(&chan->read_event);
+  pthread_mutex_destroy(&chan->mutex);
   free_queue(&chan->queue);
   free(chan->data);
   free(chan);
@@ -104,72 +110,72 @@ void free_chan(struct CHANNEL *chan)
 static void sync_send(struct CHANNEL *chan, void *data)
 {
   //printf(" sync send for %p\n", chan);
-  EnterCriticalSection(&chan->cs);
+  pthread_mutex_lock(&chan->mutex);
   chan->has_writer = true;
   memcpy(chan->data, data, chan->queue.item_size);
   if (chan->has_reader)
-    WakeConditionVariable(&chan->write_event);
-  SleepConditionVariableCS(&chan->read_event, &chan->cs, INFINITE);
-  LeaveCriticalSection(&chan->cs);
+    pthread_cond_signal(&chan->write_event);
+  pthread_cond_wait(&chan->read_event, &chan->mutex);
+  pthread_mutex_unlock(&chan->mutex);
 }
 
 static void *sync_recv(struct CHANNEL *chan, int block)
 {
   //printf(" sync recv for %p\n", chan);
-  EnterCriticalSection(&chan->cs);
+  pthread_mutex_lock(&chan->mutex);
 
   if (! block && ! chan->has_writer) {
-    LeaveCriticalSection(&chan->cs);
+    pthread_mutex_unlock(&chan->mutex);
     return NULL;
   }
   
   chan->has_reader = true;
   while (! chan->has_writer)
-    SleepConditionVariableCS(&chan->write_event, &chan->cs, INFINITE);
+    pthread_cond_wait(&chan->write_event, &chan->mutex);
   chan->has_reader = false;
   chan->has_writer = false;
   void *data = chan->data;
 
-  WakeConditionVariable(&chan->read_event);
-  LeaveCriticalSection(&chan->cs);
+  pthread_cond_signal(&chan->read_event);
+  pthread_mutex_unlock(&chan->mutex);
   return data;
 }
 
 static void async_send(struct CHANNEL *chan, void *data)
 {
   //printf("async send for %p\n", chan);
-  EnterCriticalSection(&chan->cs);
+  pthread_mutex_lock(&chan->mutex);
     
   chan->has_writer = true;
   while (chan->queue.num_items == chan->queue.capacity)
-    SleepConditionVariableCS(&chan->read_event, &chan->cs, INFINITE);
+    pthread_cond_wait(&chan->read_event, &chan->mutex);
   chan->has_writer = false;
   
   queue_add(&chan->queue, data);
   if (chan->has_reader)
-    WakeConditionVariable(&chan->write_event);
-  LeaveCriticalSection(&chan->cs);
+    pthread_cond_signal(&chan->write_event);
+  pthread_mutex_unlock(&chan->mutex);
 }
 
 static void *async_recv(struct CHANNEL *chan, int block)
 {
   //printf("async recv for %p\n", chan);
-  EnterCriticalSection(&chan->cs);
+  pthread_mutex_lock(&chan->mutex);
 
   if (! block && chan->queue.num_items == 0) {
-    LeaveCriticalSection(&chan->cs);
+    pthread_mutex_unlock(&chan->mutex);
     return NULL;
   }
   
   chan->has_reader = true;
   while (chan->queue.num_items == 0)
-    SleepConditionVariableCS(&chan->write_event, &chan->cs, INFINITE);
+    pthread_cond_wait(&chan->write_event, &chan->mutex);
   chan->has_reader = false;
 
   queue_remove(&chan->queue, chan->data);
   if (chan->has_writer)
-    WakeConditionVariable(&chan->read_event);
-  LeaveCriticalSection(&chan->cs);
+    pthread_cond_signal(&chan->read_event);
+  pthread_mutex_unlock(&chan->mutex);
   return chan->data;
 }
 
