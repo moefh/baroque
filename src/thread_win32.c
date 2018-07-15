@@ -113,14 +113,14 @@ static void sync_send(struct CHANNEL *chan, void *data)
   LeaveCriticalSection(&chan->cs);
 }
 
-static void *sync_recv(struct CHANNEL *chan, int block)
+static int sync_recv(struct CHANNEL *chan, void *data, int block)
 {
   //printf(" sync recv for %p\n", chan);
   EnterCriticalSection(&chan->cs);
 
   if (! block && ! chan->has_writer) {
     LeaveCriticalSection(&chan->cs);
-    return NULL;
+    return 1;
   }
   
   chan->has_reader = true;
@@ -128,11 +128,12 @@ static void *sync_recv(struct CHANNEL *chan, int block)
     SleepConditionVariableCS(&chan->write_event, &chan->cs, INFINITE);
   chan->has_reader = false;
   chan->has_writer = false;
-  void *data = chan->data;
+  memcpy(data, chan->data, chan->queue.item_size);
+  memset(chan->data, 0, chan->queue.item_size);
 
   WakeConditionVariable(&chan->read_event);
   LeaveCriticalSection(&chan->cs);
-  return data;
+  return 0;
 }
 
 static void async_send(struct CHANNEL *chan, void *data)
@@ -151,14 +152,14 @@ static void async_send(struct CHANNEL *chan, void *data)
   LeaveCriticalSection(&chan->cs);
 }
 
-static void *async_recv(struct CHANNEL *chan, int block)
+static int async_recv(struct CHANNEL *chan, void *data, int block)
 {
   //printf("async recv for %p\n", chan);
   EnterCriticalSection(&chan->cs);
 
   if (! block && chan->queue.num_items == 0) {
     LeaveCriticalSection(&chan->cs);
-    return NULL;
+    return 1;
   }
   
   chan->has_reader = true;
@@ -166,11 +167,11 @@ static void *async_recv(struct CHANNEL *chan, int block)
     SleepConditionVariableCS(&chan->write_event, &chan->cs, INFINITE);
   chan->has_reader = false;
 
-  queue_remove(&chan->queue, chan->data);
+  queue_remove(&chan->queue, data);
   if (chan->has_writer)
     WakeConditionVariable(&chan->read_event);
   LeaveCriticalSection(&chan->cs);
-  return chan->data;
+  return 0;
 }
 
 void chan_send(struct CHANNEL *chan, void *data)
@@ -181,10 +182,10 @@ void chan_send(struct CHANNEL *chan, void *data)
     async_send(chan, data);
 }
 
-void *chan_recv(struct CHANNEL *chan, int block)
+int chan_recv(struct CHANNEL *chan, void *data, int block)
 {
   if (chan->queue.capacity == 0)
-    return sync_recv(chan, block);
+    return sync_recv(chan, data, block);
   else
-    return async_recv(chan, block);
+    return async_recv(chan, data, block);
 }

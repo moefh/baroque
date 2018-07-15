@@ -8,7 +8,7 @@ struct CHANNEL;
 struct CHANNEL *new_chan(size_t capacity, size_t item_size);
 void free_chan(struct CHANNEL *chan);
 void chan_send(struct CHANNEL *chan, void *data);
-void *chan_recv(struct CHANNEL *chan, int block);
+int chan_recv(struct CHANNEL *chan, void *data, int block);
 
 struct THREAD;
 

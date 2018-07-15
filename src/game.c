@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <math.h>
 
 #include "game.h"
@@ -11,6 +12,8 @@
 #include "matrix.h"
 #include "bff.h"
 #include "room.h"
+#include "asset_loader.h"
+#include "model.h"
 
 struct GAME game;
 struct GAMEPAD gamepad;
@@ -168,12 +171,17 @@ static void check_room_change(void)
     set_current_room(closest_room->index);
 }
 
-int init_game(int width, int height)
+static int load_player_model(void)
 {
-  game.quit = 0;
-  init_camera(&game.camera, width, height);
-  game.camera.distance = 6.0;
+  if (load_bmf("data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
+    debug("** ERROR: can't load player model from data/player.bmf\n");
+    return 1;
+  }
+  return 0;
+}
 
+static int init_rooms(void)
+{
   init_room_store();
   if (open_bwf(&bwf_reader, "data/world.bwf") != 0) {
     debug("** ERROR: can't open data/world.bmf\n");
@@ -182,12 +190,35 @@ int init_game(int width, int height)
   bwf_reader_open = 1;
   if (set_current_room(0) != 0)
     return 1;
+
+  return 0;
+}
+
+int init_game(int width, int height)
+{
+  game.quit = 0;
+
+  if (start_asset_loader() != 0)
+    return 0;
+    
+  init_camera(&game.camera, width, height);
+  game.camera.distance = 6.0;
+
+  if (load_player_model() != 0)
+    return 1;
+  
+  if (init_rooms() != 0)
+    return 1;
+
   vec3_copy(game.creatures[0].pos, game.current_room->pos);
   return 0;
 }
 
 void close_game(void)
 {
+  debug("- Stopping asset loader...\n");
+  stop_asset_loader();
+  
   if (bwf_reader_open)
     close_bwf(&bwf_reader);
 }
@@ -258,8 +289,36 @@ static void handle_input(void)
   }
 }
 
+static void handle_loaded_assets(void)
+{
+  struct ASSET_REQUEST resp;
+  if (recv_asset_response(&resp) != 0)
+    return;
+  
+  switch (resp.type) {
+  case ASSET_TYPE_TEXTURE:
+    {
+      struct ASSET_REQUEST_TEXTURE *tex = &resp.data.texture;
+      struct MODEL_TEXTURE model_tex;
+      model_tex.width = tex->width;
+      model_tex.height = tex->height;
+      model_tex.n_chan = tex->n_chan;
+      model_tex.data = tex->data;
+      gfx_upload_model_texture(tex->gfx, &model_tex, 0);
+      gfx_release_texture(tex->gfx); // release from asset loader
+      free(tex->data);
+    }
+    break;
+
+  default:
+    console("** ERROR: got unknown asset type %d\n", resp.type);
+    break;
+  }
+}
+
 int process_game_step(void)
 {
+  handle_loaded_assets();
   handle_input();
 
   check_room_change();

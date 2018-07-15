@@ -68,16 +68,6 @@ static int load_shader(void)
   return 0;
 }
 
-static int load_models(void)
-{
-  if (load_bmf("data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
-    debug("** ERROR: can't load player model from data/player.bmf\n");
-    return 1;
-  }
-  
-  return 0;
-}
-
 static int load_font(void)
 {
   const char *font_filename = "data/font.png";
@@ -99,9 +89,6 @@ int render_setup(int width, int height)
   if (load_shader() != 0)
     return 1;
 
-  if (load_models() != 0)
-    return 1;
-  
   if (load_font() != 0)
     return 1;
 
@@ -141,6 +128,9 @@ static void get_creature_model_matrix(float *restrict mat_model, float *restrict
 
 static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view)
 {
+  if (mesh->texture && (mesh->texture->flags & GFX_TEX_FLAG_LOADED) == 0)
+    return;
+  
   float mat_model[16];
   switch (mesh->type) {
   case GFX_MESH_TYPE_ROOM:

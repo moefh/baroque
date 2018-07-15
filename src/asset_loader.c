@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <stb_image.h>
+
 #include "asset_loader.h"
 #include "thread.h"
 #include "debug.h"
@@ -19,23 +21,30 @@ static struct ASSET_LOADER loader;
 static void asset_loader_loop(void *thread_data)
 {
   while (1) {
-    struct ASSET_LOADER_REQUEST *req = chan_recv(loader.request, 1);
-    if (req == NULL) {
-      //printf("[asset loader] GOT NULL REQUEST!\n");
+    struct ASSET_REQUEST req;
+    if (chan_recv(loader.request, &req, 1) != 0)
       return;
-    }
       
-    //printf("[asset loader] got req type %d\n", req->type);
-    switch (req->type) {
-    case ASSET_LOADER_REQ_QUIT:
-      //printf("[asset loader] TERMINATING\n");
-      chan_send(loader.response, req);
+    //printf("[asset loader] got req type %d\n", req.type);
+    switch (req.type) {
+    case ASSET_TYPE_QUIT:
+      chan_send(loader.response, &req);
       return;
 
+    case ASSET_TYPE_TEXTURE:
+      {
+        struct ASSET_REQUEST_TEXTURE *tex = &req.data.texture;
+        tex->data = stbi_load_from_memory(tex->src_file_pos, tex->src_file_len, &tex->width, &tex->height, &tex->n_chan, 0);
+        chan_send(loader.response, &req);
+      }
+      break;
+
+    case ASSET_TYPE_CLOSE_FILE:
+      file_close(&req.data.close_file.file);
+      break;
+      
     default:
-      thread_sleep(100);
-      //printf("[asset loader] sending response %d\n", req->type);
-      chan_send(loader.response, req);
+      chan_send(loader.response, &req);
       break;
     }
   }
@@ -47,11 +56,11 @@ int start_asset_loader(void)
   if (loader.thread)
     return 1;
 
-  loader.request = new_chan(128, sizeof(struct ASSET_LOADER_REQUEST));
+  loader.request = new_chan(128, sizeof(struct ASSET_REQUEST));
   if (! loader.request)
     goto err;
 
-  loader.response = new_chan(0, sizeof(struct ASSET_LOADER_REQUEST));
+  loader.response = new_chan(0, sizeof(struct ASSET_REQUEST));
   if (! loader.response)
     goto err;
  
@@ -70,15 +79,15 @@ int start_asset_loader(void)
 void stop_asset_loader(void)
 {
   if (loader.request && loader.response && loader.thread) {
-    struct ASSET_LOADER_REQUEST req = {
-      .type = ASSET_LOADER_REQ_QUIT
+    struct ASSET_REQUEST req = {
+      .type = ASSET_TYPE_QUIT
     };
-    send_asset_loader_request(&req);
+    send_asset_request(&req);
     while (1) {
-      struct ASSET_LOADER_REQUEST *resp = chan_recv(loader.response, 1);
-      if (resp->type == ASSET_LOADER_REQ_QUIT)
+      struct ASSET_REQUEST resp;
+      if (chan_recv(loader.response, &resp, 1) != 0 ||
+          resp.type == ASSET_TYPE_QUIT)
         break;
-      //console("STOPPING: got asset %d\n", resp->type);
     }
     
     join_thread(loader.thread);
@@ -87,19 +96,12 @@ void stop_asset_loader(void)
   }
 }
 
-#define NUM_REQS 1024
-static struct ASSET_LOADER_REQUEST req_table[NUM_REQS];
-static int next_req = 0;
-
-void send_asset_loader_request(struct ASSET_LOADER_REQUEST *req)
+void send_asset_request(struct ASSET_REQUEST *req)
 {
-  struct ASSET_LOADER_REQUEST *use_req = &req_table[next_req];
-  next_req = (next_req + 1) % NUM_REQS;
-  memcpy(use_req, req, sizeof *use_req);
-  chan_send(loader.request, use_req);
+  chan_send(loader.request, req);
 }
 
-struct ASSET_LOADER_REQUEST *recv_asset_loader_response(void)
+int recv_asset_response(struct ASSET_REQUEST *resp)
 {
-  return chan_recv(loader.response, 0);
+  return chan_recv(loader.response, resp, 0);
 }

@@ -24,11 +24,18 @@ int num_gfx_textures;
 struct GFX_MESH gfx_meshes[NUM_GFX_MESHES];
 struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
-void gfx_free_texture(struct GFX_TEXTURE *tex)
+static void gfx_free_texture(struct GFX_TEXTURE *tex)
 {
   debug_log("-> freeing texture id %u\n", tex->id);
   glDeleteTextures(1, &tex->id);
   tex->use_count = 0;
+}
+
+void gfx_release_texture(struct GFX_TEXTURE *tex)
+{
+  tex->use_count--;
+  if (tex->use_count == 0)
+    gfx_free_texture(tex);
 }
 
 void gfx_free_mesh(struct GFX_MESH *gfx)
@@ -38,11 +45,8 @@ void gfx_free_mesh(struct GFX_MESH *gfx)
   GL_CHECK(glDeleteBuffers(1, &gfx->vtx_buf_obj));
   GL_CHECK(glDeleteBuffers(1, &gfx->index_buf_obj));
 
-  if (gfx->texture) {
-    gfx->texture->use_count--;
-    if (gfx->texture->use_count == 0)
-      gfx_free_texture(gfx->texture);
-  }
+  if (gfx->texture)
+    gfx_release_texture(gfx->texture);
 }
 
 int gfx_free_meshes(uint32_t type, uint32_t info)
@@ -166,7 +170,7 @@ void gfx_update_texture(struct GFX_TEXTURE *gfx, int xoff, int yoff, int width, 
     GL_CHECK(glTexSubImage2D(GL_TEXTURE_2D, 0, xoff, yoff, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data));
 }
 
-struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture, unsigned int flags)
+struct GFX_TEXTURE *gfx_alloc_texture(void)
 {
   struct GFX_TEXTURE *gfx = NULL;
   for (int i = 0; i < num_gfx_textures; i++) {
@@ -181,12 +185,17 @@ struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture, unsi
     gfx = &gfx_textures[num_gfx_textures++];
   }
   gfx->use_count = 1;
-  
+  gfx->flags = 0;
+  return gfx;
+}
+
+void gfx_upload_model_texture(struct GFX_TEXTURE *gfx, struct MODEL_TEXTURE *texture, unsigned int flags)
+{
   GL_CHECK(glGenTextures(1, &gfx->id));
   debug_log("-> uploading texture id %d\n", gfx->id);
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, gfx->id));
 
-  if (flags & GFX_TEX_FLAG_NO_REPEAT) {
+  if (flags & GFX_TEX_UPLOAD_FLAG_NO_REPEAT) {
     GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
     GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
   } else {
@@ -194,11 +203,11 @@ struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture, unsi
     GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
   }
 
-  if (flags & GFX_TEX_FLAG_NO_FILTER) {
+  if (flags & GFX_TEX_UPLOAD_FLAG_NO_FILTER) {
     GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
     GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
   } else {
-    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (flags & GFX_TEX_FLAG_NO_MIPMAP) ? GL_LINEAR : GL_LINEAR_MIPMAP_LINEAR));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (flags & GFX_TEX_UPLOAD_FLAG_NO_MIPMAP) ? GL_LINEAR : GL_LINEAR_MIPMAP_LINEAR));
     GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
   }
 
@@ -207,10 +216,10 @@ struct GFX_TEXTURE *gfx_upload_model_texture(struct MODEL_TEXTURE *texture, unsi
   else
     GL_CHECK(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture->data));
 
-  if ((flags & GFX_TEX_FLAG_NO_MIPMAP) == 0)
+  if ((flags & GFX_TEX_UPLOAD_FLAG_NO_MIPMAP) == 0)
     GL_CHECK(glGenerateMipmap(GL_TEXTURE_2D));
 
-  return gfx;
+  gfx->flags = GFX_TEX_FLAG_LOADED;
 }
 
 int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *data)
@@ -230,7 +239,8 @@ int gfx_upload_model(struct MODEL *model, uint32_t type, uint32_t info, void *da
     if (tex_num != MODEL_TEXTURE_NONE) {
       struct GFX_TEXTURE *tex = gfx_textures[tex_num];
       if (! tex) {
-        tex = gfx_upload_model_texture(&model->textures[tex_num], 0);
+        tex = gfx_alloc_texture();
+        gfx_upload_model_texture(tex, &model->textures[tex_num], 0);
         if (! tex) {
           debug("** ERROR: can't upload texture\n");
           return 1;
@@ -252,7 +262,8 @@ struct GFX_MESH *gfx_upload_font(struct FONT *font)
   if (! mesh)
     return NULL;
   
-  mesh->texture  = gfx_upload_model_texture(&font->texture, 0);
+  mesh->texture = gfx_alloc_texture();
+  gfx_upload_model_texture(mesh->texture, &font->texture, 0);
   if (! mesh->texture) {
     gfx_free_mesh(mesh);
     return NULL;

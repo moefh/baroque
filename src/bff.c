@@ -4,11 +4,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <stb_image.h>
-
 #include "bff.h"
 #include "debug.h"
 #include "gfx.h"
+#include "asset_loader.h"
 #include "model.h"
 #include "matrix.h"
 #include "room.h"
@@ -41,18 +40,14 @@ static struct GFX_MESH *load_bff_mesh(struct FILE_READER *file, uint32_t type, u
 
 static struct GFX_TEXTURE *load_bff_texture(struct FILE_READER *file)
 {
-  int width, height, n_chan;
-  void *data = stbi_load_from_memory(file->pos, file->start + file->size - file->pos, &width, &height, &n_chan, 0);
-  if (! data)
-    return NULL;
-
-  struct MODEL_TEXTURE tex;
-  tex.width = width;
-  tex.height = height;
-  tex.n_chan = n_chan;
-  tex.data = data;
-  struct GFX_TEXTURE *gfx_tex = gfx_upload_model_texture(&tex, 0);
-  free(data);
+  struct GFX_TEXTURE *gfx_tex = gfx_alloc_texture();
+  gfx_tex->use_count++; // asset loader counts as user until load is acknowleged
+  struct ASSET_REQUEST req;
+  req.type = ASSET_TYPE_TEXTURE;
+  req.data.texture.gfx = gfx_tex;
+  req.data.texture.src_file_pos = file->pos;
+  req.data.texture.src_file_len = file->start + file->size - file->pos;
+  send_asset_request(&req);
 
   return gfx_tex;
 }
@@ -111,6 +106,14 @@ static int load_bmf_textures(struct BMF_READER *bmf)
   return 0;
 }
 
+static void request_file_close(struct BMF_READER *bmf)
+{
+  struct ASSET_REQUEST req;
+  req.type = ASSET_TYPE_CLOSE_FILE;
+  req.data.close_file.file = bmf->file;
+  send_asset_request(&req);
+}
+
 int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data)
 {
   struct BMF_READER bmf;
@@ -127,11 +130,11 @@ int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data)
   if (load_bmf_textures(&bmf) != 0)
     goto err;
   
-  file_close(&bmf.file);
+  request_file_close(&bmf);
   return 0;
 
  err:
-  file_close(&bmf.file);
+  request_file_close(&bmf);
   return 1;
 }
 
