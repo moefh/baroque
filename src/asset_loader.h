@@ -5,16 +5,20 @@
 
 #include "file.h"
 
-#define ASSET_TYPE_QUIT        0
-#define ASSET_TYPE_TEXTURE     1
-#define ASSET_TYPE_CLOSE_FILE  2
+#define ASSET_TYPE_QUIT            0
+#define ASSET_TYPE_REQ_TEXTURE     1
+#define ASSET_TYPE_REPLY_TEXTURE   2
+#define ASSET_TYPE_CLOSE_FILE      3
 
 struct GFX_TEXTURE;
 
-struct ASSET_REQUEST_TEXTURE {
+struct ASSET_REQ_TEXTURE {
   void *src_file_pos;
   size_t src_file_len;
-  
+  struct GFX_TEXTURE *gfx;
+};
+
+struct ASSET_REPLY_TEXTURE {
   int width;
   int height;
   int n_chan;
@@ -22,15 +26,16 @@ struct ASSET_REQUEST_TEXTURE {
   struct GFX_TEXTURE *gfx;
 };
 
-struct ASSET_REQUEST_CLOSE_FILE {
+struct ASSET_CLOSE_FILE {
   struct FILE_READER file;
 };
 
 struct ASSET_REQUEST {
   int type;
   union {
-    struct ASSET_REQUEST_TEXTURE texture;
-    struct ASSET_REQUEST_CLOSE_FILE close_file;
+    struct ASSET_REQ_TEXTURE req_texture;
+    struct ASSET_REPLY_TEXTURE reply_texture;
+    struct ASSET_CLOSE_FILE close_file;
   } data;
 };
 

@@ -25,17 +25,20 @@ static void asset_loader_loop(void *thread_data)
     if (chan_recv(loader.request, &req, 1) != 0)
       return;
       
-    //printf("[asset loader] got req type %d\n", req.type);
     switch (req.type) {
     case ASSET_TYPE_QUIT:
       chan_send(loader.response, &req);
       return;
 
-    case ASSET_TYPE_TEXTURE:
+    case ASSET_TYPE_REQ_TEXTURE:
       {
-        struct ASSET_REQUEST_TEXTURE *tex = &req.data.texture;
-        tex->data = stbi_load_from_memory(tex->src_file_pos, tex->src_file_len, &tex->width, &tex->height, &tex->n_chan, 0);
-        chan_send(loader.response, &req);
+        struct ASSET_REQ_TEXTURE *req_tex = &req.data.req_texture;
+        struct ASSET_REQUEST reply;
+        struct ASSET_REPLY_TEXTURE *reply_tex = &reply.data.reply_texture;
+        reply.type = ASSET_TYPE_REPLY_TEXTURE;
+        reply_tex->gfx = req_tex->gfx;
+        reply_tex->data = stbi_load_from_memory(req_tex->src_file_pos, req_tex->src_file_len, &reply_tex->width, &reply_tex->height, &reply_tex->n_chan, 0);
+        chan_send(loader.response, &reply);
       }
       break;
 
@@ -52,7 +55,6 @@ static void asset_loader_loop(void *thread_data)
 
 int start_asset_loader(void)
 {
-  debug("- Starting asset loader thread...\n");
   if (loader.thread)
     return 1;
 

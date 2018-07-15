@@ -198,6 +198,7 @@ int init_game(int width, int height)
 {
   game.quit = 0;
 
+  debug("- Starting asset loader thread...\n");
   if (start_asset_loader() != 0)
     return 0;
     
@@ -296,9 +297,9 @@ static void handle_loaded_assets(void)
     return;
   
   switch (resp.type) {
-  case ASSET_TYPE_TEXTURE:
+  case ASSET_TYPE_REPLY_TEXTURE:
     {
-      struct ASSET_REQUEST_TEXTURE *tex = &resp.data.texture;
+      struct ASSET_REPLY_TEXTURE *tex = &resp.data.reply_texture;
       struct MODEL_TEXTURE model_tex;
       model_tex.width = tex->width;
       model_tex.height = tex->height;

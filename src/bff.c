@@ -42,11 +42,12 @@ static struct GFX_TEXTURE *load_bff_texture(struct FILE_READER *file)
 {
   struct GFX_TEXTURE *gfx_tex = gfx_alloc_texture();
   gfx_tex->use_count++; // asset loader counts as user until load is acknowleged
+
   struct ASSET_REQUEST req;
-  req.type = ASSET_TYPE_TEXTURE;
-  req.data.texture.gfx = gfx_tex;
-  req.data.texture.src_file_pos = file->pos;
-  req.data.texture.src_file_len = file->start + file->size - file->pos;
+  req.type = ASSET_TYPE_REQ_TEXTURE;
+  req.data.req_texture.gfx = gfx_tex;
+  req.data.req_texture.src_file_pos = file->pos;
+  req.data.req_texture.src_file_len = file->start + file->size - file->pos;
   send_asset_request(&req);
 
   return gfx_tex;
