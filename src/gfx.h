@@ -19,12 +19,14 @@
 #define GFX_TEX_FLAG_LOADED      (1<<0)
 
 struct GFX_TEXTURE {
+  struct GFX_TEXTURE *next;
   int use_count;
   unsigned int flags;
   GLuint id;
 };
 
 struct GFX_MESH {
+  struct GFX_MESH *next;
   int use_count;
   GLuint vtx_array_obj;
   GLuint vtx_buf_obj;
@@ -40,8 +42,6 @@ struct GFX_MESH {
   void *data;
 };
 
-extern int num_gfx_meshes;
-extern int num_gfx_textures;
 extern struct GFX_MESH gfx_meshes[NUM_GFX_MESHES];
 extern struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
@@ -51,6 +51,7 @@ struct MODEL;
 struct MODEL_MESH;
 struct MODEL_TEXTURE;
 
+void init_gfx(void);
 struct GFX_MESH *gfx_upload_font(struct FONT *font);
 struct GFX_MESH *gfx_upload_grid_tiles(struct GRID_TILES *tiles);
 struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint32_t info, void *data);

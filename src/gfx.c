@@ -19,16 +19,60 @@
 #define debug_log(...)
 #endif
 
-int num_gfx_meshes;
-int num_gfx_textures;
+static struct GFX_MESH *gfx_mesh_free_list;
+static struct GFX_MESH *gfx_mesh_used_list;
+static struct GFX_TEXTURE *gfx_texture_free_list;
+static struct GFX_TEXTURE *gfx_texture_used_list;
 struct GFX_MESH gfx_meshes[NUM_GFX_MESHES];
 struct GFX_TEXTURE gfx_textures[NUM_GFX_TEXTURES];
 
+void init_gfx(void)
+{
+  for (int i = 0; i < NUM_GFX_MESHES-1; i++)
+    gfx_meshes[i].next = &gfx_meshes[i+1];
+  gfx_meshes[NUM_GFX_MESHES-1].next = NULL;
+  gfx_mesh_free_list = &gfx_meshes[0];
+  gfx_mesh_used_list = NULL;
+
+  for (int i = 0; i < NUM_GFX_TEXTURES-1; i++)
+    gfx_textures[i].next = &gfx_textures[i+1];
+  gfx_textures[NUM_GFX_TEXTURES-1].next = NULL;
+  gfx_texture_free_list = &gfx_textures[0];
+  gfx_texture_used_list = NULL;
+}
+
 static void gfx_free_texture(struct GFX_TEXTURE *tex)
 {
-  debug_log("-> freeing texture id %u\n", tex->id);
   glDeleteTextures(1, &tex->id);
   tex->use_count = 0;
+
+  // remove from used list
+  struct GFX_TEXTURE **p = &gfx_texture_used_list;
+  while (*p && *p != tex)
+    p = &(*p)->next;
+  if (! *p) {
+    debug("** ERROR: trying to free unused gfx texture\n");
+    return;
+  }
+  *p = tex->next;
+  
+  // add to free list
+  tex->next = gfx_texture_free_list;
+  gfx_texture_free_list = tex;
+}
+
+struct GFX_TEXTURE *gfx_alloc_texture(void)
+{
+  struct GFX_TEXTURE *tex = gfx_texture_free_list;
+  if (tex == NULL)
+    return NULL;
+  gfx_texture_free_list = tex->next;
+  tex->next = gfx_texture_used_list;
+  gfx_texture_used_list = tex;
+  
+  tex->use_count = 1;
+  tex->flags = 0;
+  return tex;
 }
 
 void gfx_release_texture(struct GFX_TEXTURE *tex)
@@ -38,55 +82,88 @@ void gfx_release_texture(struct GFX_TEXTURE *tex)
     gfx_free_texture(tex);
 }
 
-void gfx_free_mesh(struct GFX_MESH *gfx)
+static void gfx_unload_mesh(struct GFX_MESH *mesh)
 {
-  gfx->use_count = 0;
-  GL_CHECK(glDeleteVertexArrays(1, &gfx->vtx_array_obj));
-  GL_CHECK(glDeleteBuffers(1, &gfx->vtx_buf_obj));
-  GL_CHECK(glDeleteBuffers(1, &gfx->index_buf_obj));
+  GL_CHECK(glDeleteVertexArrays(1, &mesh->vtx_array_obj));
+  GL_CHECK(glDeleteBuffers(1, &mesh->vtx_buf_obj));
+  GL_CHECK(glDeleteBuffers(1, &mesh->index_buf_obj));
 
-  if (gfx->texture)
-    gfx_release_texture(gfx->texture);
+  if (mesh->texture)
+    gfx_release_texture(mesh->texture);
+
+  mesh->use_count = 0;
+}
+
+void gfx_free_mesh(struct GFX_MESH *mesh)
+{
+  gfx_unload_mesh(mesh);
+  
+  // remove from used list
+  struct GFX_MESH **p = &gfx_mesh_used_list;
+  while (*p && *p != mesh)
+    p = &(*p)->next;
+  if (! *p) {
+    debug("** ERROR: trying to free unused gfx mesh\n");
+    return;
+  }
+  *p = mesh->next;
+  
+  // add to free list
+  mesh->next = gfx_mesh_free_list;
+  gfx_mesh_free_list = mesh;
 }
 
 int gfx_free_meshes(uint32_t type, uint32_t info)
 {
-  debug_log("-> freeing all meshes with type=%u, info=%u\n", type, info);
+  debug_log("-> freeing all meshes with (type=%u, info=%u)\n", type, info);
   int n_released_meshes = 0;
-  for (int i = 0; i < num_gfx_meshes; i++) {
-    struct GFX_MESH *gfx = &gfx_meshes[i];
-    if (gfx->use_count != 0 && gfx->type == type && gfx->info == info) {
-      debug_log("-> freeing mesh %d\n", i);
+  struct GFX_MESH **p = &gfx_mesh_used_list;
+  while (*p) {
+    struct GFX_MESH *mesh = *p;
+    if (mesh->type == type && mesh->info == info) {
+      debug_log("-> freeing mesh %d\n", (int) (mesh - gfx_meshes));
       n_released_meshes++;
-      gfx_free_mesh(gfx);
+      gfx_unload_mesh(mesh);
+      
+      // remove from used list
+      *p = mesh->next;
+
+      // add to free list
+      mesh->next = gfx_mesh_free_list;
+      gfx_mesh_free_list = mesh;
+    } else {
+      p = &mesh->next;
     }
   }
 
   return n_released_meshes;
 }
 
+static struct GFX_MESH *gfx_alloc_mesh(void)
+{
+  struct GFX_MESH *mesh = gfx_mesh_free_list;
+  if (mesh == NULL)
+    return NULL;
+  gfx_mesh_free_list = mesh->next;
+  mesh->next = gfx_mesh_used_list;
+  gfx_mesh_used_list = mesh;
+
+  mesh->use_count = 1;
+  return mesh;
+}
+
 struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, uint32_t info, void *data)
 {
-  struct GFX_MESH *gfx = NULL;
-  for (int i = 0; i < num_gfx_meshes; i++) {
-    if (gfx_meshes[i].use_count == 0) {
-      debug_log("-> uploading mesh %d\n", i);
-      gfx = &gfx_meshes[i];
-      break;
-    }
-  }
-  if (! gfx) {
-    if (num_gfx_meshes >= NUM_GFX_MESHES)
-      return NULL;
-    debug_log("-> uploading mesh %d\n", num_gfx_meshes);
-    gfx = &gfx_meshes[num_gfx_meshes++];
-  }
-  gfx->use_count = 1;
+  struct GFX_MESH *gfx = gfx_alloc_mesh();
+  if (! gfx)
+    return NULL;
   gfx->type = type;
   gfx->info = info;
   gfx->data = data;
   gfx->texture = NULL;
-  
+
+  debug_log("-> uploading mesh %d with (type=%u, info=%u)\n", (int) (gfx - gfx_meshes), type, info);
+
   GL_CHECK(glGenVertexArrays(1, &gfx->vtx_array_obj));
   GL_CHECK(glBindVertexArray(gfx->vtx_array_obj));
 
@@ -168,25 +245,6 @@ void gfx_update_texture(struct GFX_TEXTURE *gfx, int xoff, int yoff, int width, 
     GL_CHECK(glTexSubImage2D(GL_TEXTURE_2D, 0, xoff, yoff, width, height, GL_RGB,  GL_UNSIGNED_BYTE, data));
   else
     GL_CHECK(glTexSubImage2D(GL_TEXTURE_2D, 0, xoff, yoff, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data));
-}
-
-struct GFX_TEXTURE *gfx_alloc_texture(void)
-{
-  struct GFX_TEXTURE *gfx = NULL;
-  for (int i = 0; i < num_gfx_textures; i++) {
-    if (gfx_textures[i].use_count == 0) {
-      gfx = &gfx_textures[i];
-      break;
-    }
-  }
-  if (! gfx) {
-    if (num_gfx_textures >= NUM_GFX_TEXTURES)
-      return NULL;
-    gfx = &gfx_textures[num_gfx_textures++];
-  }
-  gfx->use_count = 1;
-  gfx->flags = 0;
-  return gfx;
 }
 
 void gfx_upload_model_texture(struct GFX_TEXTURE *gfx, struct MODEL_TEXTURE *texture, unsigned int flags)

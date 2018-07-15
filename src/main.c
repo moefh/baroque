@@ -47,7 +47,7 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
   handle_game_key(key, (action == GLFW_PRESS || action == GLFW_REPEAT) ? 1 : 0, mods);
 }
 
-static int init_gfx()
+static int init_graphics(void)
 {
   debug("- Initializing GLFW...\n");
   if (! glfwInit()) {
@@ -112,7 +112,7 @@ int main(void)
   int ret = 1;
 
   init_debug();
-  if (init_gfx() != 0)
+  if (init_graphics() != 0)
     goto err;
 
   detect_gamepad(&gamepad);

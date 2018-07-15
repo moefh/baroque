@@ -86,6 +86,8 @@ static int load_font(void)
 
 int render_setup(int width, int height)
 {
+  init_gfx();
+  
   if (load_shader() != 0)
     return 1;
 
@@ -257,7 +259,7 @@ void render_screen(void)
   GL_CHECK(glUniform1i(shader.uni_tex1, 0));
   GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
   GL_CHECK(glUniform3fv(shader.uni_camera_pos, 1, camera_pos));
-  for (int i = 0; i < num_gfx_meshes; i++) {
+  for (int i = 0; i < NUM_GFX_MESHES; i++) {
     if (gfx_meshes[i].use_count != 0)
       render_mesh(&gfx_meshes[i], mat_view_projection, mat_view);
   }
