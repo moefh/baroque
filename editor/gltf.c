@@ -178,6 +178,9 @@ static int read_buffer_view_prop(struct JSON_READER *reader, const char *name, v
   if (strcmp(name, "byteOffset") == 0)
     return read_json_u32(reader, &buffer_view->byte_offset);
 
+  if (strcmp(name, "byteStride") == 0)
+    return read_json_u32(reader, &buffer_view->byte_stride);
+
   if (strcmp(name, "buffer") == 0)
     return read_json_u16(reader, &buffer_view->buffer);
 
@@ -198,6 +201,7 @@ static int read_buffer_views_element(struct JSON_READER *reader, int index, void
   struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[index];
   buffer_view->byte_offset = 0;
   buffer_view->byte_length = 0;
+  buffer_view->byte_stride = 0;
   buffer_view->target = 0;
   buffer_view->buffer = 0;
   

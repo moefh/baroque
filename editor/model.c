@@ -46,6 +46,15 @@ static int read_file_data(struct MODEL_READER *reader, void *data, size_t size)
   return 0;
 }
 
+static int skip_file_data(struct MODEL_READER *reader, size_t size)
+{
+  if (fseek(reader->file, size, SEEK_CUR) != 0) {
+    debug_log("* FILE ERROR: can't seek to skip %u bytes\n", (unsigned) size);
+    return 1;
+  }
+  return 0;
+}
+
 static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, uint16_t *p_model_texture_index)
 {
   // check if texture is already converted
@@ -302,19 +311,28 @@ static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER 
       struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[attrib_num]];
       struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[accessor->buffer_view];
 
-      if (set_file_pos(reader, buffer_view->byte_offset) != 0)
+      uint32_t buffer_byte_offset = buffer_view->byte_offset + accessor->byte_offset;
+      if (set_file_pos(reader, buffer_byte_offset) != 0)
         return 1;
 
       int attr_size = get_gltf_mesh_attrib_size(attrib_num);
 
-      debug_log("  -> reading %d vtx elements from file offset %-5d -- attribute %2d, size %2d, stride %2d, offset %d\n",
-             accessor->count, buffer_view->byte_offset, attrib_num, attr_size, vtx_stride, attr_off);
+      debug_log("  -> reading %d vtx elements from buffer offset %-5d -- attribute %2d, size %2d, stride %2d, offset %d\n",
+                accessor->count, buffer_byte_offset, attrib_num, attr_size, vtx_stride, attr_off);
 
       char *vtx = (char *)mesh->vtx + attr_off;
       for (uint32_t i = 0; i < accessor->count; i++) {
         if (read_file_data(reader, vtx, attr_size) != 0)
           return 1;
         vtx += vtx_stride;
+        if (buffer_view->byte_stride != 0 && buffer_view->byte_stride != (unsigned) attr_size) {
+          if ((unsigned) attr_size < buffer_view->byte_stride) {
+            debug_log("** ERROR: invalid byte stride: %d (vertex stride is %d)\n", buffer_view->byte_stride, vtx_stride);
+            return 1;
+          }
+          if (skip_file_data(reader, (unsigned) attr_size - buffer_view->byte_stride) != 0)
+            return 1;
+        }
       }
       attr_off += attr_size;
     }
@@ -341,15 +359,35 @@ static uint8_t convert_gltf_ind_type(uint16_t accessor_comp_type)
   }
 }
 
-static int extract_ind_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER *reader, struct GLTF_ACCESSOR *accessor)
+static uint8_t convert_gltf_ind_size(uint16_t accessor_comp_type)
+{
+  switch (accessor_comp_type) {
+  case GLTF_ACCESSOR_COMP_TYPE_BYTE:
+  case GLTF_ACCESSOR_COMP_TYPE_UBYTE:
+    return 1;
+
+  case GLTF_ACCESSOR_COMP_TYPE_SHORT:
+  case GLTF_ACCESSOR_COMP_TYPE_USHORT:
+    return 2;
+
+  case GLTF_ACCESSOR_COMP_TYPE_UINT:
+    return 4;
+
+  default:
+    return 0xff;
+  }
+}
+
+static int extract_ind_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER *reader, struct GLTF_ACCESSOR *accessor, uint32_t byte_length)
 {
   struct GLTF_BUFFER_VIEW *buffer_view = &reader->gltf->buffer_views[accessor->buffer_view];
+  uint32_t buffer_byte_offset = buffer_view->byte_offset + accessor->byte_offset;
 
-  debug_log("  -> reading %d index bytes from file offset %-5d\n", buffer_view->byte_length, buffer_view->byte_offset);
+  debug_log("  -> reading %d index bytes from buffer offset %-5d\n", byte_length, buffer_byte_offset);
   
-  if (set_file_pos(reader, buffer_view->byte_offset) != 0)
+  if (set_file_pos(reader, buffer_byte_offset) != 0)
     return 1;
-  if (read_file_data(reader, mesh->ind, buffer_view->byte_length) != 0)
+  if (read_file_data(reader, mesh->ind, byte_length) != 0)
     return 1;
   return 0;
 }
@@ -387,9 +425,8 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
     debug_log("* WARNING: ignoring primitive with unsupported index component type %u\n", indices_accessor->component_type);
     return 0;
   }
-  struct GLTF_BUFFER_VIEW *indices_buffer_view = &reader->gltf->buffer_views[indices_accessor->buffer_view];
-  uint32_t ind_buffer_size = indices_buffer_view->byte_length;
-
+  uint32_t ind_buffer_size = indices_accessor->count * convert_gltf_ind_size(indices_accessor->component_type);
+  
   debug_log("-> adding mesh with vtx_size=%u, ind_size=%u\n", vtx_buffer_size, ind_buffer_size);
   struct MODEL_MESH *model_mesh = new_model_mesh(mesh_vtx_type, vtx_buffer_size, mesh_ind_type, ind_buffer_size, indices_accessor->count);
   mat4_copy(model_mesh->matrix, node->matrix);
@@ -397,7 +434,7 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
   // extract mesh data
   if (extract_vtx_buffer_data(model_mesh, reader, prim, used_vtx_attribs) != 0)
     return 1;
-  if (extract_ind_buffer_data(model_mesh, reader, indices_accessor) != 0)
+  if (extract_ind_buffer_data(model_mesh, reader, indices_accessor, ind_buffer_size) != 0)
     return 1;
   
   // convert material
