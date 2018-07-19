@@ -18,6 +18,8 @@
 #define GLTF_MAX_NODES           64
 #define GLTF_MAX_SCENES          8
 #define GLTF_MAX_SAMPLERS        16
+#define GLTF_MAX_SKINS           8
+#define GLTF_MAX_SKIN_JOINTS     32
 #define GLTF_MAX_TEXTURES        16
 
 #define GLTF_NONE ((uint16_t)0xffff)
@@ -55,7 +57,7 @@
 #define GLTF_MESH_MODE_TRIANGLE_STRIP 5
 #define GLTF_MESH_MODE_TRIANGLE_FAN   6
 
-#define GLTF_MESH_NUM_ATTRIBS       8
+#define GLTF_MESH_NUM_ATTRIBS       16
 #define GLTF_MESH_ATTRIB_POSITION   0
 #define GLTF_MESH_ATTRIB_NORMAL     1
 #define GLTF_MESH_ATTRIB_TANGENT    2
@@ -64,6 +66,14 @@
 #define GLTF_MESH_ATTRIB_TEXCOORD_2 5
 #define GLTF_MESH_ATTRIB_TEXCOORD_3 6
 #define GLTF_MESH_ATTRIB_TEXCOORD_4 7
+#define GLTF_MESH_ATTRIB_JOINTS_0   8
+#define GLTF_MESH_ATTRIB_JOINTS_1   9
+#define GLTF_MESH_ATTRIB_JOINTS_2   10
+#define GLTF_MESH_ATTRIB_JOINTS_3   11
+#define GLTF_MESH_ATTRIB_WEIGHTS_0  12
+#define GLTF_MESH_ATTRIB_WEIGHTS_1  13
+#define GLTF_MESH_ATTRIB_WEIGHTS_2  14
+#define GLTF_MESH_ATTRIB_WEIGHTS_3  15
 
 #define GLTF_SAMPLER_FILTER_NEAREST                9728
 #define GLTF_SAMPLER_FILTER_LINEAR                 9729
@@ -138,6 +148,7 @@ struct GLTF_MESH {
 struct GLTF_NODE {
   float matrix[16];
   uint16_t mesh;
+  uint16_t skin;
   uint16_t children[GLTF_MAX_NODE_CHILDREN];
   uint16_t n_children;
 };
@@ -152,6 +163,13 @@ struct GLTF_SAMPLER {
 struct GLTF_SCENE {
   uint16_t n_nodes;
   uint16_t nodes[GLTF_MAX_SCENE_NODES];
+};
+
+struct GLTF_SKIN {
+  uint16_t inverse_bind_matrices;
+  uint16_t skeleton;
+  uint16_t n_joints;
+  uint16_t joints[GLTF_MAX_SKIN_JOINTS];
 };
 
 struct GLTF_TEXTURE {
@@ -169,6 +187,7 @@ struct GLTF_DATA {
   struct GLTF_NODE        nodes[GLTF_MAX_NODES];
   struct GLTF_SCENE       scenes[GLTF_MAX_SCENES];
   struct GLTF_SAMPLER     samplers[GLTF_MAX_SAMPLERS];
+  struct GLTF_SKIN        skins[GLTF_MAX_SKINS];
   struct GLTF_TEXTURE     textures[GLTF_MAX_TEXTURES];
   uint16_t scene;
 

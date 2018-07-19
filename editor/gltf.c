@@ -9,7 +9,7 @@
 #include "matrix.h"
 #include "json.h"
 
-//#define DEBUG_GLTF_READER
+#define DEBUG_GLTF_READER
 #ifdef DEBUG_GLTF_READER
 #define debug_log printf
 #else
@@ -56,32 +56,50 @@ struct JSON_NODE_INFO {
 static int read_node_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct JSON_NODE_INFO *info = data;
-  size_t num;
-  
-  if (strcmp(name, "mesh") == 0) {
-    if (read_json_u16(reader, &info->node->mesh) != 0)
-      return 1;
-  } else if (strcmp(name, "rotation") == 0) {
-    if (read_json_float_array(reader, info->rotation, 4, &num) != 0 || num != 4)
-      return 1;
+
+  if (strcmp(name, "mesh") == 0)
+    return read_json_u16(reader, &info->node->mesh);
+
+  if (strcmp(name, "rotation") == 0) {
     info->has_rotation = 1;
-  } else if (strcmp(name, "scale") == 0) {
-    if (read_json_float_array(reader, info->scale, 3, &num) != 0 || num != 3)
-      return 1;
-    info->has_scale = 1;
-  } else if (strcmp(name, "translation") == 0) {
-    if (read_json_float_array(reader, info->translation, 3, &num) != 0 || num != 3)
-      return 1;
-    info->has_translation = 1;
-  } else if (strcmp(name, "matrix") == 0) {
-    if (read_json_float_array(reader, info->node->matrix, 16, &num) != 0 || num != 16)
-      return 1;
-    info->has_matrix = 1;
-  } else {
-    debug_log("-> skipping 'node.%s'\n", name);
-    return skip_json_value(reader);
+    size_t num;
+    return read_json_float_array(reader, info->rotation, 4, &num) != 0 || num != 4;
   }
-  return 0;
+
+  if (strcmp(name, "scale") == 0) {
+    info->has_scale = 1;
+    size_t num;
+    return read_json_float_array(reader, info->scale, 3, &num) != 0 || num != 3;
+  }
+
+  if (strcmp(name, "translation") == 0) {
+    info->has_translation = 1;
+    size_t num;
+    return read_json_float_array(reader, info->translation, 3, &num) != 0 || num != 3;
+  }
+
+  if (strcmp(name, "matrix") == 0) {
+    info->has_matrix = 1;
+    size_t num;
+    return read_json_float_array(reader, info->node->matrix, 16, &num) != 0 || num != 16;
+  }
+  
+  if (strcmp(name, "children") == 0) {
+    size_t num;
+    if (read_json_u16_array(reader, info->node->children, GLTF_MAX_NODE_CHILDREN, &num) != 0)
+      return 1;
+    info->node->n_children = (uint16_t)num;
+    return 0;
+  }
+
+  if (strcmp(name, "skin") == 0)
+    return read_json_u16(reader, &info->node->skin);
+
+  if (strcmp(name, "name") == 0)
+    return skip_json_value(reader);
+
+  debug_log("-> skipping 'node.%s'\n", name);
+  return skip_json_value(reader);
 }
 
 static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
@@ -101,6 +119,7 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
   
   mat4_id(node->matrix);
   node->mesh = GLTF_NONE;
+  node->skin = GLTF_NONE;
   node->n_children = 0;
   if (read_json_object(reader, read_node_prop, &info) != 0)
     return 1;
@@ -280,6 +299,9 @@ static int read_scene_prop(struct JSON_READER *reader, const char *name, void *d
     return 0;
   }
 
+  if (strcmp(name, "name") == 0)
+    return skip_json_value(reader);
+
   debug_log("-> skipping 'scene.%s'\n", name);
   return skip_json_value(reader);
 }
@@ -404,6 +426,9 @@ static int read_material_prop(struct JSON_READER *reader, const char *name, void
   
   if (strcmp(name, "pbrMetallicRoughness") == 0)
     return read_json_object(reader, read_material_pbr_prop, material);
+
+  if (strcmp(name, "name") == 0)
+    return skip_json_value(reader);
   
   debug_log("-> skipping 'material.%s'\n", name);
   return skip_json_value(reader);
@@ -513,6 +538,14 @@ static int read_mesh_prim_attr_prop(struct JSON_READER *reader, const char *name
   else if (strcmp(name, "TEXCOORD_2") == 0) attrib_num = GLTF_MESH_ATTRIB_TEXCOORD_2;
   else if (strcmp(name, "TEXCOORD_3") == 0) attrib_num = GLTF_MESH_ATTRIB_TEXCOORD_3;
   else if (strcmp(name, "TEXCOORD_4") == 0) attrib_num = GLTF_MESH_ATTRIB_TEXCOORD_4;
+  else if (strcmp(name, "JOINTS_0") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_0;
+  else if (strcmp(name, "JOINTS_1") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_1;
+  else if (strcmp(name, "JOINTS_2") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_2;
+  else if (strcmp(name, "JOINTS_3") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_3;
+  else if (strcmp(name, "WEIGHTS_0") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_0;
+  else if (strcmp(name, "WEIGHTS_1") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_1;
+  else if (strcmp(name, "WEIGHTS_2") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_2;
+  else if (strcmp(name, "WEIGHTS_3") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_3;
   else {
     debug_log("* WARNING: ignoring unknown attribute '%s'\n", name);
     return skip_json_value(reader);
@@ -566,7 +599,10 @@ static int read_mesh_prop(struct JSON_READER *reader, const char *name, void *da
 
   if (strcmp(name, "primitives") == 0)
     return read_json_array(reader, read_mesh_primitives_element, mesh);
-  
+
+  if (strcmp(name, "name") == 0)
+    return skip_json_value(reader);
+
   debug_log("-> skipping 'mesh.%s'\n", name);
   return skip_json_value(reader);
 }
@@ -579,8 +615,46 @@ static int read_meshes_element(struct JSON_READER *reader, int index, void *data
   }
   struct GLTF_DATA *gltf = reader->data;
   struct GLTF_MESH *mesh = &gltf->meshes[index];
+  mesh->n_primitives = 0;
 
   return read_json_object(reader, read_mesh_prop, mesh);
+}
+
+static int read_skin_prop(struct JSON_READER *reader, const char *name, void *data)
+{
+  struct GLTF_SKIN *skin = data;
+
+  if (strcmp(name, "inverseBindMatrices") == 0)
+    return read_json_u16(reader, &skin->inverse_bind_matrices);
+
+  if (strcmp(name, "skeleton") == 0)
+    return read_json_u16(reader, &skin->skeleton);
+
+  if (strcmp(name, "joints") == 0) {
+    size_t num;
+    if (read_json_u16_array(reader, skin->joints, GLTF_MAX_SKIN_JOINTS, &num) != 0)
+      return 1;
+    skin->n_joints = (uint16_t)num;
+    return 0;
+  }
+
+  debug_log("-> skipping 'skin.%s'\n", name);
+  return skip_json_value(reader);
+}
+
+static int read_skins_element(struct JSON_READER *reader, int index, void *data)
+{
+  if (index >= GLTF_MAX_SKINS) {
+    debug_log("* ERROR: too many skins (%d)\n", index);
+    return 1;
+  }
+  struct GLTF_DATA *gltf = reader->data;
+  struct GLTF_SKIN *skin = &gltf->skins[index];
+  skin->inverse_bind_matrices = GLTF_NONE;
+  skin->skeleton = GLTF_NONE;
+  skin->n_joints = 0;
+  
+  return read_json_object(reader, read_skin_prop, skin);
 }
 
 static int read_main_prop(struct JSON_READER *reader, const char *name, void *data)
@@ -623,6 +697,9 @@ static int read_main_prop(struct JSON_READER *reader, const char *name, void *da
   if (strcmp(name, "meshes") == 0)
     return read_json_array(reader, read_meshes_element, NULL);
 
+  if (strcmp(name, "skins") == 0)
+    return read_json_array(reader, read_skins_element, NULL);
+  
   debug_log("-> skipping '%s'\n", name);
   return skip_json_value(reader);
 }

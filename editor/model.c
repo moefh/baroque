@@ -11,7 +11,7 @@
 #include "gltf.h"
 #include "matrix.h"
 
-//#define DEBUG_MODEL_READER
+#define DEBUG_MODEL_READER
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
 #else
@@ -81,6 +81,7 @@ static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, u
     model_tex->width = reader->data_off + buffer_view->byte_offset;
     model_tex->height = buffer_view->byte_length;
     model_tex->n_chan = 0;
+    debug_log("  -> added texture %d: '%s'\n", model_texture_index, model_tex->data);
   } else if (reader->read_flags & MODEL_FLAGS_PACKED_IMAGES) {
     if (set_file_pos(reader, buffer_view->byte_offset) != 0)
       return 1;
@@ -93,6 +94,7 @@ static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, u
     model_tex->width = buffer_view->byte_length;
     model_tex->height = buffer_view->byte_length;
     model_tex->n_chan = 0;
+    debug_log("  -> added texture %d: %u bytes (original format)\n", model_texture_index, buffer_view->byte_length);
   } else {
     if (set_file_pos(reader, buffer_view->byte_offset) != 0)
       return 1;
@@ -104,10 +106,9 @@ static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, u
     model_tex->width = width;
     model_tex->height = width;
     model_tex->n_chan = n_chan;
+    debug_log("  -> added texture %d: %dx%d %d channels\n", model_texture_index, width, height, n_chan);
   }
 
-  debug_log("  -> added texture %d: %dx%d %d channels\n", model_texture_index, width, height, n_chan);
-  
   reader->model->n_textures++;
   reader->converted_textures[gltf_texture] = model_texture_index;
   *p_model_texture_index = model_texture_index;
@@ -148,30 +149,51 @@ struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t i
   return mesh;
 }
 
+static struct MODEL_MESH_VTX_TYPE {
+  uint8_t vtx_type;
+  uint16_t gltf_attrib_flags;
+} model_mesh_vtx_types[] = {
+#if 0
+#define GLTF_SKEL_ATTRIBS (1<<GLTF_MESH_ATTRIB_JOINTS_0)|(1<<GLTF_MESH_ATTRIB_JOINTS_1)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_0)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_1)
+  // the order here matters (fuller bitmaps go first):
+  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL_ATTRIBS },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL_ATTRIBS },
+  { MODEL_MESH_VTX_POS_NORMAL_SKEL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|GLTF_SKEL_ATTRIBS },
+  { MODEL_MESH_VTX_POS_UV2_SKEL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL_ATTRIBS },
+  { MODEL_MESH_VTX_POS_UV1_SKEL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL_ATTRIBS },
+  { MODEL_MESH_VTX_POS_SKEL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|GLTF_SKEL_ATTRIBS },
+#endif
+  
+  { MODEL_MESH_VTX_POS_NORMAL_UV2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1) },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0) },
+  { MODEL_MESH_VTX_POS_NORMAL,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL) },
+  { MODEL_MESH_VTX_POS_UV2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1) },
+  { MODEL_MESH_VTX_POS_UV1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0) },
+  { MODEL_MESH_VTX_POS,
+    (1<<GLTF_MESH_ATTRIB_POSITION) },
+};
+
 static uint8_t convert_gltf_vtx_type(uint16_t prim_attribs_present, uint16_t *use_vtx_attribs)
 {
-#define ATTRS_FOR_POS            ((1<<GLTF_MESH_ATTRIB_POSITION))
-#define ATTRS_FOR_POS_UV1        ((1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0))
-#define ATTRS_FOR_POS_UV2        ((1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1))
-#define ATTRS_FOR_POS_NORMAL     ((1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL))
-#define ATTRS_FOR_POS_NORMAL_UV1 ((1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0))
-#define ATTRS_FOR_POS_NORMAL_UV2 ((1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1))
-
-#define TEST_ATTRIBS(X) do {                                            \
-    if ((prim_attribs_present & ATTRS_FOR_##X) == ATTRS_FOR_##X) {      \
-      *use_vtx_attribs = ATTRS_FOR_##X;                                 \
-      return MODEL_MESH_VTX_##X;                                        \
-    }                                                                   \
-  } while (0)
+  for (size_t i = 0; i < sizeof(model_mesh_vtx_types)/sizeof(model_mesh_vtx_types[0]); i++) {
+    struct MODEL_MESH_VTX_TYPE *type = &model_mesh_vtx_types[i];
+    if ((prim_attribs_present & type->gltf_attrib_flags) == type->gltf_attrib_flags) {
+      *use_vtx_attribs = type->gltf_attrib_flags;
+      return type->vtx_type;
+    }
+  }
   
-  // the order here matters (fuller bitmaps go first):
-  TEST_ATTRIBS(POS_NORMAL_UV2);
-  TEST_ATTRIBS(POS_NORMAL_UV1);
-  TEST_ATTRIBS(POS_NORMAL);
-  TEST_ATTRIBS(POS_UV2);
-  TEST_ATTRIBS(POS_UV1);
-  TEST_ATTRIBS(POS);
-
   return 0xff;
 }
 
@@ -185,7 +207,7 @@ static int extract_vtx_buffer_size_from_attribs(struct GLTF_DATA *gltf,
     if (used_vtx_attribs & (1<<attrib_num)) {
       struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[attrib_num]];
       struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[accessor->buffer_view];
-      if (accessor->component_type != GLTF_ACCESSOR_COMP_TYPE_FLOAT) {
+      if (accessor->component_type != GLTF_ACCESSOR_COMP_TYPE_FLOAT && accessor->component_type != GLTF_ACCESSOR_COMP_TYPE_USHORT) {
         debug_log("* WARNING: ignoring primitive with unsupported vertex attribute component type: %d\n", accessor->component_type);
         return 1;
       }
@@ -200,12 +222,18 @@ static int extract_vtx_buffer_size_from_attribs(struct GLTF_DATA *gltf,
 static int get_mesh_vtx_stride(struct MODEL_MESH *mesh)
 {
   switch (mesh->vtx_type) {
-  case MODEL_MESH_VTX_POS:            return sizeof(float) * (3);
-  case MODEL_MESH_VTX_POS_UV1:        return sizeof(float) * (3+2);
-  case MODEL_MESH_VTX_POS_UV2:        return sizeof(float) * (3+2+2);
-  case MODEL_MESH_VTX_POS_NORMAL:     return sizeof(float) * (3+3);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1: return sizeof(float) * (3+3+2);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2: return sizeof(float) * (3+3+2+2);
+  case MODEL_MESH_VTX_POS:                 return sizeof(float)*(3);
+  case MODEL_MESH_VTX_POS_UV1:             return sizeof(float)*(3+2);
+  case MODEL_MESH_VTX_POS_UV2:             return sizeof(float)*(3+2+2);
+  case MODEL_MESH_VTX_POS_NORMAL:          return sizeof(float)*(3+3);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1:      return sizeof(float)*(3+3+2);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2:      return sizeof(float)*(3+3+2+2);
+  case MODEL_MESH_VTX_POS_SKEL:            return sizeof(float)*(3+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_UV1_SKEL:        return sizeof(float)*(3+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_UV2_SKEL:        return sizeof(float)*(3+2+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_NORMAL_SKEL:     return sizeof(float)*(3+3+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL: return sizeof(float)*(3+3+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL: return sizeof(float)*(3+3+2+2+1+1) + sizeof(uint16_t)*(1+1);
   default: return 0;
   }
 }
@@ -223,6 +251,18 @@ static int get_gltf_mesh_attrib_size(uint16_t attrib_num)
   case GLTF_MESH_ATTRIB_TEXCOORD_3:
   case GLTF_MESH_ATTRIB_TEXCOORD_4:
     return sizeof(float) * 2;
+
+  case GLTF_MESH_ATTRIB_WEIGHTS_0:
+  case GLTF_MESH_ATTRIB_WEIGHTS_1:
+  case GLTF_MESH_ATTRIB_WEIGHTS_2:
+  case GLTF_MESH_ATTRIB_WEIGHTS_3:
+    return sizeof(float);
+
+  case GLTF_MESH_ATTRIB_JOINTS_0:
+  case GLTF_MESH_ATTRIB_JOINTS_1:
+  case GLTF_MESH_ATTRIB_JOINTS_2:
+  case GLTF_MESH_ATTRIB_JOINTS_3:
+    return sizeof(uint16_t);
     
   default:
     return 0;
@@ -349,13 +389,24 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
   return 0;
 }
 
-static int convert_gltf_node(struct MODEL_READER *reader, struct GLTF_NODE *node)
+static int convert_gltf_node(struct MODEL_READER *reader, int node_index, char *nodes_done)
 {
-  if (node->mesh == GLTF_NONE)
+  struct GLTF_NODE *node = &reader->gltf->nodes[node_index];
+  if (nodes_done[node_index])
     return 0;
-  struct GLTF_MESH *mesh = &reader->gltf->meshes[node->mesh];
-  for (uint16_t i = 0; i < mesh->n_primitives; i++) {
-    if (convert_gltf_mesh_primitive(reader, node, &mesh->primitives[i]) != 0)
+  nodes_done[node_index] = 1;
+  
+  if (node->mesh != GLTF_NONE) {
+    debug_log("-> converting node %d, mesh %d\n", node_index, node->mesh);
+    struct GLTF_MESH *mesh = &reader->gltf->meshes[node->mesh];
+    for (uint16_t i = 0; i < mesh->n_primitives; i++) {
+      if (convert_gltf_mesh_primitive(reader, node, &mesh->primitives[i]) != 0)
+        return 1;
+    }
+  }
+
+  for (uint16_t i = 0; i < node->n_children; i++) {
+    if (convert_gltf_node(reader, node->children[i], nodes_done) != 0)
       return 1;
   }
   
@@ -399,8 +450,10 @@ int read_glb_model(struct MODEL *model, const char *filename, uint32_t flags)
   if (gltf->scene == GLTF_NONE)
     goto err;
   struct GLTF_SCENE *scene = &gltf->scenes[gltf->scene];
+  char nodes_done[GLTF_MAX_NODES] = { 0 };
   for (uint16_t i = 0; i < scene->n_nodes; i++) {
-    if (convert_gltf_node(&reader, &gltf->nodes[i]) != 0)
+    int node_index = scene->nodes[i];
+    if (convert_gltf_node(&reader, node_index, nodes_done) != 0)
       goto err;
   }
 

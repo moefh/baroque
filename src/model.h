@@ -10,12 +10,18 @@
 #define MODEL_MAX_TEXTURES 16
 #define MODEL_MAX_MESHES   16
 
-#define MODEL_MESH_VTX_POS             0
-#define MODEL_MESH_VTX_POS_UV1         1
-#define MODEL_MESH_VTX_POS_UV2         2
-#define MODEL_MESH_VTX_POS_NORMAL      3
-#define MODEL_MESH_VTX_POS_NORMAL_UV1  4
-#define MODEL_MESH_VTX_POS_NORMAL_UV2  5
+#define MODEL_MESH_VTX_POS                  0
+#define MODEL_MESH_VTX_POS_UV1              1
+#define MODEL_MESH_VTX_POS_UV2              2
+#define MODEL_MESH_VTX_POS_NORMAL           3
+#define MODEL_MESH_VTX_POS_NORMAL_UV1       4
+#define MODEL_MESH_VTX_POS_NORMAL_UV2       5
+#define MODEL_MESH_VTX_POS_SKEL             6
+#define MODEL_MESH_VTX_POS_UV1_SKEL         7
+#define MODEL_MESH_VTX_POS_UV2_SKEL         8
+#define MODEL_MESH_VTX_POS_NORMAL_SKEL      9
+#define MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL  10
+#define MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL  11
 
 #define MODEL_MESH_IND_U8  0
 #define MODEL_MESH_IND_U16 1
