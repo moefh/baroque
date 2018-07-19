@@ -24,6 +24,7 @@ void mat4_load_translation(float *m, float tx, float ty, float tz);
 void mat4_load_rot_x(float *m, float angle);
 void mat4_load_rot_y(float *m, float angle);
 void mat4_load_rot_z(float *m, float angle);
+void mat4_load_rot_quat(float *restrict m, const float *restrict q);
 
 void mat4_perspective(float *m, float aspect, float yfov, float near, float far);
 void mat4_inf_perspective(float *m, float aspect, float yfov, float near);
@@ -51,6 +52,7 @@ void mat4_transpose(float *restrict out, const float *restrict m);
 void mat3_copy(float *restrict dest, const float *restrict src);
 void mat3_id(float *m);
 int mat3_inverse(float *restrict out, float *restrict m);
+void mat3_load_rot_quat(float *restrict m, const float *restrict q);
 
 void mat3_from_mat4(float *restrict mat3, const float *restrict mat4);
 void mat3_mul_vec3(float *restrict ret, const float *m, const float *restrict v);
@@ -152,6 +154,16 @@ static inline float clamp(float val, float min, float max)
 static inline float snap_to_grid(float val, float grid_spacing)
 {
   return round(val / grid_spacing) * grid_spacing;
+}
+
+// quat:
+static inline void quat_normalize(float *q)
+{
+  float s = 1.0/sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]);
+  q[0] *= s;
+  q[1] *= s;
+  q[2] *= s;
+  q[3] *= s;
 }
 
 #endif /* MATRIX_H_FILE */

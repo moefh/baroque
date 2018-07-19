@@ -153,23 +153,38 @@ static struct MODEL_MESH_VTX_TYPE {
   uint8_t vtx_type;
   uint16_t gltf_attrib_flags;
 } model_mesh_vtx_types[] = {
-#if 0
-#define GLTF_SKEL_ATTRIBS (1<<GLTF_MESH_ATTRIB_JOINTS_0)|(1<<GLTF_MESH_ATTRIB_JOINTS_1)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_0)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_1)
-  // the order here matters (fuller bitmaps go first):
-  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL_ATTRIBS },
-  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL_ATTRIBS },
-  { MODEL_MESH_VTX_POS_NORMAL_SKEL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|GLTF_SKEL_ATTRIBS },
-  { MODEL_MESH_VTX_POS_UV2_SKEL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL_ATTRIBS },
-  { MODEL_MESH_VTX_POS_UV1_SKEL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL_ATTRIBS },
-  { MODEL_MESH_VTX_POS_SKEL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|GLTF_SKEL_ATTRIBS },
-#endif
+  // the order here matters (fuller flags go first):
+
+#define GLTF_SKEL2_ATTRIBS (1<<GLTF_MESH_ATTRIB_JOINTS_0)|(1<<GLTF_MESH_ATTRIB_JOINTS_1)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_0)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_1)
+  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL2_ATTRIBS },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL2_ATTRIBS },
+  { MODEL_MESH_VTX_POS_NORMAL_SKEL2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|GLTF_SKEL2_ATTRIBS },
+  { MODEL_MESH_VTX_POS_UV2_SKEL2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL2_ATTRIBS },
+  { MODEL_MESH_VTX_POS_UV1_SKEL2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL2_ATTRIBS },
+  { MODEL_MESH_VTX_POS_SKEL2,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|GLTF_SKEL2_ATTRIBS },
+#undef GLTF_SKEL2_ATTRIBS
   
+#define GLTF_SKEL1_ATTRIBS (1<<GLTF_MESH_ATTRIB_JOINTS_0)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_0)
+  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL1_ATTRIBS },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL1_ATTRIBS },
+  { MODEL_MESH_VTX_POS_NORMAL_SKEL1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|GLTF_SKEL1_ATTRIBS },
+  { MODEL_MESH_VTX_POS_UV2_SKEL1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL1_ATTRIBS },
+  { MODEL_MESH_VTX_POS_UV1_SKEL1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL1_ATTRIBS },
+  { MODEL_MESH_VTX_POS_SKEL1,
+    (1<<GLTF_MESH_ATTRIB_POSITION)|GLTF_SKEL1_ATTRIBS },
+#undef GLTF_SKEL1_ATTRIBS
+
   { MODEL_MESH_VTX_POS_NORMAL_UV2,
     (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1) },
   { MODEL_MESH_VTX_POS_NORMAL_UV1,
@@ -222,18 +237,24 @@ static int extract_vtx_buffer_size_from_attribs(struct GLTF_DATA *gltf,
 static int get_mesh_vtx_stride(struct MODEL_MESH *mesh)
 {
   switch (mesh->vtx_type) {
-  case MODEL_MESH_VTX_POS:                 return sizeof(float)*(3);
-  case MODEL_MESH_VTX_POS_UV1:             return sizeof(float)*(3+2);
-  case MODEL_MESH_VTX_POS_UV2:             return sizeof(float)*(3+2+2);
-  case MODEL_MESH_VTX_POS_NORMAL:          return sizeof(float)*(3+3);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1:      return sizeof(float)*(3+3+2);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2:      return sizeof(float)*(3+3+2+2);
-  case MODEL_MESH_VTX_POS_SKEL:            return sizeof(float)*(3+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_UV1_SKEL:        return sizeof(float)*(3+2+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_UV2_SKEL:        return sizeof(float)*(3+2+2+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL:     return sizeof(float)*(3+3+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL: return sizeof(float)*(3+3+2+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL: return sizeof(float)*(3+3+2+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS:                  return sizeof(float)*(3);
+  case MODEL_MESH_VTX_POS_UV1:              return sizeof(float)*(3+2);
+  case MODEL_MESH_VTX_POS_UV2:              return sizeof(float)*(3+2+2);
+  case MODEL_MESH_VTX_POS_NORMAL:           return sizeof(float)*(3+3);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1:       return sizeof(float)*(3+3+2);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2:       return sizeof(float)*(3+3+2+2);
+  case MODEL_MESH_VTX_POS_SKEL1:            return sizeof(float)*(3+1) + sizeof(uint16_t)*(1);
+  case MODEL_MESH_VTX_POS_UV1_SKEL1:        return sizeof(float)*(3+2+1) + sizeof(uint16_t)*(1);
+  case MODEL_MESH_VTX_POS_UV2_SKEL1:        return sizeof(float)*(3+2+2+1) + sizeof(uint16_t)*(1);
+  case MODEL_MESH_VTX_POS_NORMAL_SKEL1:     return sizeof(float)*(3+3+1) + sizeof(uint16_t)*(1);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1: return sizeof(float)*(3+3+2+1) + sizeof(uint16_t)*(1);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1: return sizeof(float)*(3+3+2+2+1) + sizeof(uint16_t)*(1);
+  case MODEL_MESH_VTX_POS_SKEL2:            return sizeof(float)*(3+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_UV1_SKEL2:        return sizeof(float)*(3+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_UV2_SKEL2:        return sizeof(float)*(3+2+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_NORMAL_SKEL2:     return sizeof(float)*(3+3+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2: return sizeof(float)*(3+3+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2: return sizeof(float)*(3+3+2+2+1+1) + sizeof(uint16_t)*(1+1);
   default: return 0;
   }
 }
@@ -286,7 +307,7 @@ static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER 
 
       int attr_size = get_gltf_mesh_attrib_size(attrib_num);
 
-      debug_log("  -> reading %d vtx elements from file offset %-5d -- attribute %d, size %2d, stride %2d, offset %d\n",
+      debug_log("  -> reading %d vtx elements from file offset %-5d -- attribute %2d, size %2d, stride %2d, offset %d\n",
              accessor->count, buffer_view->byte_offset, attrib_num, attr_size, vtx_stride, attr_off);
 
       char *vtx = (char *)mesh->vtx + attr_off;

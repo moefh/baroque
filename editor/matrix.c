@@ -222,6 +222,40 @@ void mat4_scale(float *m, float scale)
   m[14] *= scale;
 }
 
+void mat4_load_rot_quat(float *restrict m, const float *restrict q)
+{
+  float q0_q0 = q[0]*q[0];
+  float q0_q1 = q[0]*q[1];
+  float q0_q2 = q[0]*q[2];
+  float q0_q3 = q[0]*q[3];
+  float q1_q1 = q[1]*q[1];
+  float q1_q2 = q[1]*q[2];
+  float q1_q3 = q[1]*q[3];
+  float q2_q2 = q[2]*q[2];
+  float q2_q3 = q[2]*q[3];
+  //float q3_q3 = q[3]*q[3];
+  
+  m[ 0] = 1.0 - 2.0*q1_q1 - 2.0*q2_q2;
+  m[ 1] =       2.0*q0_q1 - 2.0*q2_q3;
+  m[ 2] =       2.0*q0_q2 + 2.0*q1_q3;
+  m[ 3] = 0.0;
+
+  m[ 4] =       2.0*q0_q1 + 2.0*q2_q3;
+  m[ 5] = 1.0 - 2.0*q0_q0 - 2.0*q2_q2;
+  m[ 6] =       2.0*q1_q2 - 2.0*q0_q3;
+  m[ 7] = 0.0;
+
+  m[ 8] =       2.0*q0_q2 - 2.0*q1_q3;
+  m[ 9] =       2.0*q1_q2 + 2.0*q0_q3;
+  m[10] = 1.0 - 2.0*q0_q0 - 2.0*q1_q1;
+  m[11] = 0.0;
+
+  m[12] = 0.0;
+  m[13] = 0.0;
+  m[14] = 0.0;
+  m[15] = 1.0;
+}
+
 void mat4_load_rot_x(float *m, float angle)
 {
   float c = cos(angle);
@@ -636,6 +670,32 @@ void mat3_mul_vec3(float *restrict ret, const float *m, const float *restrict v)
   ret[0] = m[0]*v[0] + m[1]*v[0] + m[2]*v[2];
   ret[1] = m[3]*v[1] + m[4]*v[1] + m[5]*v[2];
   ret[2] = m[6]*v[2] + m[7]*v[2] + m[8]*v[2];
+}
+
+void mat3_load_rot_quat(float *restrict m, const float *restrict q)
+{
+  float q0_q0 = q[0]*q[0];
+  float q0_q1 = q[0]*q[1];
+  float q0_q2 = q[0]*q[2];
+  float q0_q3 = q[0]*q[3];
+  float q1_q1 = q[1]*q[1];
+  float q1_q2 = q[1]*q[2];
+  float q1_q3 = q[1]*q[3];
+  float q2_q2 = q[2]*q[2];
+  float q2_q3 = q[2]*q[3];
+  //float q3_q3 = q[3]*q[3];
+  
+  m[0] = 1.0 - 2.0*q1_q1 - 2.0*q2_q2;
+  m[1] =       2.0*q0_q1 - 2.0*q2_q3;
+  m[2] =       2.0*q0_q2 + 2.0*q1_q3;
+
+  m[3] =       2.0*q0_q1 + 2.0*q2_q3;
+  m[4] = 1.0 - 2.0*q0_q0 - 2.0*q2_q2;
+  m[5] =       2.0*q1_q2 - 2.0*q0_q3;
+
+  m[6] =       2.0*q0_q2 - 2.0*q1_q3;
+  m[7] =       2.0*q1_q2 + 2.0*q0_q3;
+  m[8] = 1.0 - 2.0*q0_q0 - 2.0*q1_q1;
 }
 
 void vec3_load_spherical(float *v, float r, float theta, float phi)

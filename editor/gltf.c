@@ -124,13 +124,13 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
   if (read_json_object(reader, read_node_prop, &info) != 0)
     return 1;
 
-  // don't bother with non-mesh nodes
-  if (node->mesh == GLTF_NONE)
-    return 0;
-  
   if (! info.has_matrix) {
-    if (info.has_rotation)
-      printf("TODO: apply rotation to node matrix\n");
+    if (info.has_rotation) {
+      float rotation[16];
+      quat_normalize(info.rotation);
+      mat4_load_rot_quat(rotation, info.rotation);
+      mat4_mul_right(node->matrix, rotation);
+    }
     if (info.has_translation) {
       float translation[16];
       mat4_load_translation(translation, info.translation[0], info.translation[1], info.translation[2]);
