@@ -109,8 +109,6 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
 
   case MODEL_MESH_VTX_POS_UV1:
-  case MODEL_MESH_VTX_POS_UV1_SKEL1:
-  case MODEL_MESH_VTX_POS_UV1_SKEL2:
     GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+2), (void *) (sizeof(float)*(0))));
     GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+2), (void *) (sizeof(float)*(3))));
     GL_CHECK(glEnableVertexAttribArray(0));
@@ -118,8 +116,6 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
     
   case MODEL_MESH_VTX_POS_UV2:
-  case MODEL_MESH_VTX_POS_UV2_SKEL1:
-  case MODEL_MESH_VTX_POS_UV2_SKEL2:
     GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+2+2), (void *) (sizeof(float)*(0))));
     GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+2+2), (void *) (sizeof(float)*(3))));
     GL_CHECK(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+2+2), (void *) (sizeof(float)*(3+2))));
@@ -129,8 +125,6 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
     
   case MODEL_MESH_VTX_POS_NORMAL:
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL1:
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL2:
     GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3), (void *) (sizeof(float)*(0))));
     GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3), (void *) (sizeof(float)*(3))));
     GL_CHECK(glEnableVertexAttribArray(0));
@@ -138,8 +132,6 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
     
   case MODEL_MESH_VTX_POS_NORMAL_UV1:
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1:
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2:
     GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2), (void *) (sizeof(float)*(0))));
     GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2), (void *) (sizeof(float)*(3))));
     GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2), (void *) (sizeof(float)*(3+3))));
@@ -147,10 +139,26 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     GL_CHECK(glEnableVertexAttribArray(1));
     GL_CHECK(glEnableVertexAttribArray(2));
     break;
+
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1:
+    GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(0))));
+    GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3))));
+    GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3))));
+    GL_CHECK(glEnableVertexAttribArray(0));
+    GL_CHECK(glEnableVertexAttribArray(1));
+    GL_CHECK(glEnableVertexAttribArray(2));
+    break;
+    
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2:
+    GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(0))));
+    GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3))));
+    GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3))));
+    GL_CHECK(glEnableVertexAttribArray(0));
+    GL_CHECK(glEnableVertexAttribArray(1));
+    GL_CHECK(glEnableVertexAttribArray(2));
+    break;
     
   case MODEL_MESH_VTX_POS_NORMAL_UV2:
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1:
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2:
     GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+2), (void *) (sizeof(float)*(0))));
     GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+2), (void *) (sizeof(float)*(3))));
     GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+2), (void *) (sizeof(float)*(3+3))));

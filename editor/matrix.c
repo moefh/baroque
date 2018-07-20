@@ -38,6 +38,13 @@ void vec3_dump(const float *v)
   printf("\n");
 }
 
+void vec2_dump(const float *v)
+{
+  for (int i = 0; i < 2; i++)
+    printf("  %8.5f", v[i]);
+  printf("\n");
+}
+
 void mat4_copy(float *restrict dest, const float *restrict src)
 {
   memcpy(dest, src, 16*sizeof(float));

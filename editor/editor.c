@@ -429,7 +429,7 @@ void editor_handle_mouse_scroll(double x_off, double y_off)
 {
   float zoom = 1.0 - y_off/20.0;
   editor.camera.distance *= zoom;
-  editor.camera.distance = clamp(editor.camera.distance, 3.0, 100.0);
+  editor.camera.distance = clamp(editor.camera.distance, 3.0, 1000.0);
 }
 
 void editor_handle_cursor_pos(double x, double y)

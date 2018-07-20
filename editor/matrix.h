@@ -7,6 +7,7 @@
 
 void mat3_dump(const float *mat);
 void mat4_dump(const float *mat);
+void vec2_dump(const float *v);
 void vec3_dump(const float *v);
 void vec4_dump(const float *v);
 

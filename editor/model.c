@@ -11,7 +11,7 @@
 #include "gltf.h"
 #include "matrix.h"
 
-#define DEBUG_MODEL_READER
+//#define DEBUG_MODEL_READER
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
 #else
@@ -252,18 +252,18 @@ static int get_mesh_vtx_stride(struct MODEL_MESH *mesh)
   case MODEL_MESH_VTX_POS_NORMAL:           return sizeof(float)*(3+3);
   case MODEL_MESH_VTX_POS_NORMAL_UV1:       return sizeof(float)*(3+3+2);
   case MODEL_MESH_VTX_POS_NORMAL_UV2:       return sizeof(float)*(3+3+2+2);
-  case MODEL_MESH_VTX_POS_SKEL1:            return sizeof(float)*(3+1) + sizeof(uint16_t)*(1);
-  case MODEL_MESH_VTX_POS_UV1_SKEL1:        return sizeof(float)*(3+2+1) + sizeof(uint16_t)*(1);
-  case MODEL_MESH_VTX_POS_UV2_SKEL1:        return sizeof(float)*(3+2+2+1) + sizeof(uint16_t)*(1);
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL1:     return sizeof(float)*(3+3+1) + sizeof(uint16_t)*(1);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1: return sizeof(float)*(3+3+2+1) + sizeof(uint16_t)*(1);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1: return sizeof(float)*(3+3+2+2+1) + sizeof(uint16_t)*(1);
-  case MODEL_MESH_VTX_POS_SKEL2:            return sizeof(float)*(3+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_UV1_SKEL2:        return sizeof(float)*(3+2+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_UV2_SKEL2:        return sizeof(float)*(3+2+2+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL2:     return sizeof(float)*(3+3+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2: return sizeof(float)*(3+3+2+1+1) + sizeof(uint16_t)*(1+1);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2: return sizeof(float)*(3+3+2+2+1+1) + sizeof(uint16_t)*(1+1);
+  case MODEL_MESH_VTX_POS_SKEL1:            return sizeof(float)*(3+1) + sizeof(uint16_t)*(4);
+  case MODEL_MESH_VTX_POS_UV1_SKEL1:        return sizeof(float)*(3+2+4) + sizeof(uint16_t)*(4);
+  case MODEL_MESH_VTX_POS_UV2_SKEL1:        return sizeof(float)*(3+2+2+4) + sizeof(uint16_t)*(4);
+  case MODEL_MESH_VTX_POS_NORMAL_SKEL1:     return sizeof(float)*(3+3+4) + sizeof(uint16_t)*(4);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1: return sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*(4);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1: return sizeof(float)*(3+3+2+2+4) + sizeof(uint16_t)*(4);
+  case MODEL_MESH_VTX_POS_SKEL2:            return sizeof(float)*(3+4+4) + sizeof(uint16_t)*(4+4);
+  case MODEL_MESH_VTX_POS_UV1_SKEL2:        return sizeof(float)*(3+2+4+4) + sizeof(uint16_t)*(4+4);
+  case MODEL_MESH_VTX_POS_UV2_SKEL2:        return sizeof(float)*(3+2+2+4+4) + sizeof(uint16_t)*(4+4);
+  case MODEL_MESH_VTX_POS_NORMAL_SKEL2:     return sizeof(float)*(3+3+4+4) + sizeof(uint16_t)*(4+4);
+  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2: return sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4);
+  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2: return sizeof(float)*(3+3+2+2+4+4) + sizeof(uint16_t)*(4+4);
   default: return 0;
   }
 }
@@ -284,15 +284,11 @@ static int get_gltf_mesh_attrib_size(uint16_t attrib_num)
 
   case GLTF_MESH_ATTRIB_WEIGHTS_0:
   case GLTF_MESH_ATTRIB_WEIGHTS_1:
-  case GLTF_MESH_ATTRIB_WEIGHTS_2:
-  case GLTF_MESH_ATTRIB_WEIGHTS_3:
-    return sizeof(float);
+    return sizeof(float) * 4;
 
   case GLTF_MESH_ATTRIB_JOINTS_0:
   case GLTF_MESH_ATTRIB_JOINTS_1:
-  case GLTF_MESH_ATTRIB_JOINTS_2:
-  case GLTF_MESH_ATTRIB_JOINTS_3:
-    return sizeof(uint16_t);
+    return sizeof(uint16_t) * 4;
     
   default:
     return 0;
@@ -317,8 +313,8 @@ static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER 
 
       int attr_size = get_gltf_mesh_attrib_size(attrib_num);
 
-      debug_log("  -> reading %d vtx elements from buffer offset %-5d -- attribute %2d, size %2d, stride %2d, offset %d\n",
-                accessor->count, buffer_byte_offset, attrib_num, attr_size, vtx_stride, attr_off);
+      debug_log("  -> reading %d vtx elements from buffer offset %-6d stride %-2d -- attribute %2d, size %2d, stride %2d, offset %d\n",
+                accessor->count, buffer_byte_offset, buffer_view->byte_stride, attrib_num, attr_size, vtx_stride, attr_off);
 
       char *vtx = (char *)mesh->vtx + attr_off;
       for (uint32_t i = 0; i < accessor->count; i++) {
@@ -327,7 +323,7 @@ static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER 
         vtx += vtx_stride;
         if (buffer_view->byte_stride != 0 && buffer_view->byte_stride != (unsigned) attr_size) {
           if ((unsigned) attr_size < buffer_view->byte_stride) {
-            debug_log("** ERROR: invalid byte stride: %d (vertex stride is %d)\n", buffer_view->byte_stride, vtx_stride);
+            debug_log("** ERROR: invalid byte stride: %d (attribute size is %d)\n", buffer_view->byte_stride, attr_size);
             return 1;
           }
           if (skip_file_data(reader, (unsigned) attr_size - buffer_view->byte_stride) != 0)

@@ -9,7 +9,7 @@
 #include "matrix.h"
 #include "json.h"
 
-#define DEBUG_GLTF_READER
+//#define DEBUG_GLTF_READER
 #ifdef DEBUG_GLTF_READER
 #define debug_log printf
 #else
@@ -111,9 +111,6 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
   struct GLTF_DATA *gltf = reader->data;
   struct GLTF_NODE *node = &gltf->nodes[index];
   struct JSON_NODE_INFO info = {
-    .has_rotation = 0,
-    .has_scale = 0,
-    .has_translation = 0,
     .node = node,
   };
   
@@ -431,6 +428,13 @@ static int read_material_prop(struct JSON_READER *reader, const char *name, void
   if (strcmp(name, "pbrMetallicRoughness") == 0)
     return read_json_object(reader, read_material_pbr_prop, material);
 
+  if (strcmp(name, "emissiveFactor") == 0) {
+    size_t num;
+    if (read_json_float_array(reader, material->emissive_factor, 3, &num) != 0 || num != 3)
+      return 1;
+    return 0;
+  }
+  
   if (strcmp(name, "name") == 0)
     return skip_json_value(reader);
   
@@ -544,12 +548,8 @@ static int read_mesh_prim_attr_prop(struct JSON_READER *reader, const char *name
   else if (strcmp(name, "TEXCOORD_4") == 0) attrib_num = GLTF_MESH_ATTRIB_TEXCOORD_4;
   else if (strcmp(name, "JOINTS_0") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_0;
   else if (strcmp(name, "JOINTS_1") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_1;
-  else if (strcmp(name, "JOINTS_2") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_2;
-  else if (strcmp(name, "JOINTS_3") == 0)   attrib_num = GLTF_MESH_ATTRIB_JOINTS_3;
   else if (strcmp(name, "WEIGHTS_0") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_0;
   else if (strcmp(name, "WEIGHTS_1") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_1;
-  else if (strcmp(name, "WEIGHTS_2") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_2;
-  else if (strcmp(name, "WEIGHTS_3") == 0)  attrib_num = GLTF_MESH_ATTRIB_WEIGHTS_3;
   else {
     debug_log("* WARNING: ignoring unknown attribute '%s'\n", name);
     return skip_json_value(reader);
@@ -641,6 +641,9 @@ static int read_skin_prop(struct JSON_READER *reader, const char *name, void *da
     skin->n_joints = (uint16_t)num;
     return 0;
   }
+
+  if (strcmp(name, "name") == 0)
+    return skip_json_value(reader);
 
   debug_log("-> skipping 'skin.%s'\n", name);
   return skip_json_value(reader);
