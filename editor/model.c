@@ -28,10 +28,10 @@ struct MODEL_READER {
   uint16_t converted_textures[GLTF_MAX_TEXTURES];  // converted_textures[gltf_texture_index] = model_texture_index
 };
 
-static struct SUPPORTED_VTX_TYPE {
-  uint8_t vtx_type;
-  uint8_t n_attribs;
-  struct SUPPORTED_VTX_TYPE_ATTRIB {
+static const struct MODEL_MESH_VTX_TYPE {
+  int vtx_type;
+  int n_attribs;
+  struct MODEL_MESH_VTX_TYPE_ATTRIB {
     uint16_t attrib_num;
     uint16_t accessor_type;
     uint16_t accessor_component_type;
@@ -225,6 +225,43 @@ static int skip_file_data(struct MODEL_READER *reader, size_t size)
   return 0;
 }
 
+static uint16_t get_vtx_type_attrib_size(const struct MODEL_MESH_VTX_TYPE_ATTRIB *vtx_type_attrib)
+{
+  uint16_t component_size;
+  switch (vtx_type_attrib->accessor_component_type) {
+  case GLTF_ACCESSOR_COMP_TYPE_BYTE:   component_size = 1; break;
+  case GLTF_ACCESSOR_COMP_TYPE_UBYTE:  component_size = 1; break;
+  case GLTF_ACCESSOR_COMP_TYPE_SHORT:  component_size = 2; break;
+  case GLTF_ACCESSOR_COMP_TYPE_USHORT: component_size = 2; break;
+  case GLTF_ACCESSOR_COMP_TYPE_UINT:   component_size = 4; break;
+  case GLTF_ACCESSOR_COMP_TYPE_FLOAT:  component_size = 4; break;
+  default: return 0;
+  }
+
+  switch (vtx_type_attrib->accessor_type) {
+  case GLTF_ACCESSOR_TYPE_SCALAR: return component_size; break;
+  case GLTF_ACCESSOR_TYPE_VEC2: return 2 * component_size; break;
+  case GLTF_ACCESSOR_TYPE_VEC3: return 3 * component_size; break;
+  case GLTF_ACCESSOR_TYPE_VEC4: return 4 * component_size; break;
+  case GLTF_ACCESSOR_TYPE_MAT2: return 4 * component_size; break;
+  case GLTF_ACCESSOR_TYPE_MAT3: return 9 * component_size; break;
+  case GLTF_ACCESSOR_TYPE_MAT4: return 16 * component_size; break;
+  default: return 0;
+  }
+}
+
+static int get_vtx_type_size(const struct MODEL_MESH_VTX_TYPE *vtx_type)
+{
+  uint16_t size = 0;
+  for (int i = 0; i < vtx_type->n_attribs; i++) {
+    uint16_t attrib_size = get_vtx_type_attrib_size(&vtx_type->attribs[i]);
+    if (attrib_size == 0)
+      return 0;
+    size += attrib_size;
+  }
+  return size;
+}
+
 static int convert_gltf_texture(struct MODEL_READER *reader, int gltf_texture, uint16_t *p_model_texture_index)
 {
   // check if texture is already converted
@@ -328,26 +365,26 @@ struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t i
   return mesh;
 }
 
-static uint8_t convert_gltf_vtx_type(struct GLTF_DATA *gltf, struct GLTF_MESH_PRIMITIVE *prim, uint16_t *ret_use_vtx_attribs)
+static const struct MODEL_MESH_VTX_TYPE *convert_gltf_vtx_type(struct GLTF_DATA *gltf, struct GLTF_MESH_PRIMITIVE *prim, uint32_t *ret_buffer_size)
 {
-  int best_supported_index = -1;
-  int best_supported_num_missing = 0;
-  uint16_t best_use_vtx_attribs = 0;
+  const struct MODEL_MESH_VTX_TYPE *best_vtx_type = NULL;
+  int best_num_missing = 0;
+  uint32_t best_buffer_size = 0;
   
-  for (int supported_index = 0; supported_index < (int) (sizeof(supported_vtx_types)/sizeof(supported_vtx_types[0])); supported_index++) {
-    struct SUPPORTED_VTX_TYPE *type = &supported_vtx_types[supported_index];
+  for (int vtx_type_index = 0; vtx_type_index < (int) (sizeof(supported_vtx_types)/sizeof(supported_vtx_types[0])); vtx_type_index++) {
+    const struct MODEL_MESH_VTX_TYPE *vtx_type = &supported_vtx_types[vtx_type_index];
 
     // check if accessor types are supported
     int supported = 1;
-    for (uint8_t i = 0; i < type->n_attribs; i++) {
-      if (! (prim->attribs_present & (1<<type->attribs[i].attrib_num)))
+    for (uint8_t i = 0; i < vtx_type->n_attribs; i++) {
+      if (! (prim->attribs_present & (1<<vtx_type->attribs[i].attrib_num)))
         continue;
-      struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[type->attribs[i].attrib_num]];
-      if (accessor->type != type->attribs[i].accessor_type && accessor->component_type != type->attribs[i].accessor_component_type) {
+      struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[vtx_type->attribs[i].attrib_num]];
+      if (accessor->type != vtx_type->attribs[i].accessor_type && accessor->component_type != vtx_type->attribs[i].accessor_component_type) {
         printf("**** bad type [%d][%d]: have (%d,%d), want (%d,%d)\n",
-               supported_index, type->attribs[i].attrib_num,
+               vtx_type_index, vtx_type->attribs[i].attrib_num,
                accessor->type, accessor->component_type,
-               type->attribs[i].accessor_type, type->attribs[i].accessor_component_type);
+               vtx_type->attribs[i].accessor_type, vtx_type->attribs[i].accessor_component_type);
         supported = 0;
         break;
       }
@@ -356,8 +393,8 @@ static uint8_t convert_gltf_vtx_type(struct GLTF_DATA *gltf, struct GLTF_MESH_PR
       continue;
 
     // check if primitive has all attributes
-    for (uint8_t i = 0; i < type->n_attribs; i++) {
-      if (! (prim->attribs_present & (1<<type->attribs[i].attrib_num))) {
+    for (uint8_t i = 0; i < vtx_type->n_attribs; i++) {
+      if (! (prim->attribs_present & (1<<vtx_type->attribs[i].attrib_num))) {
         supported = 0;
         break;
       }
@@ -365,151 +402,73 @@ static uint8_t convert_gltf_vtx_type(struct GLTF_DATA *gltf, struct GLTF_MESH_PR
     if (! supported)
       continue;
 
-    // count all attribs that are not supported
+    // count all attribs that are not supported and get buffer size
     int num_missing = 0;
-    uint16_t use_vtx_attribs = 0;
+    uint32_t buffer_size = 0;
     for (int attrib_num = 0; attrib_num < GLTF_MESH_NUM_ATTRIBS; attrib_num++) {
       if (! (prim->attribs_present & (1<<attrib_num)))
         continue;
       int found = 0;
-      for (uint8_t i = 0; i < type->n_attribs; i++) {
-        if (type->attribs[i].attrib_num == attrib_num) {
+      for (uint8_t i = 0; i < vtx_type->n_attribs; i++) {
+        if (vtx_type->attribs[i].attrib_num == attrib_num) {
+          struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[attrib_num]];
+          buffer_size += accessor->count * get_vtx_type_attrib_size(&vtx_type->attribs[i]);
           found = 1;
           break;
         }
       }
       if (! found)
         num_missing++;
-      else
-        use_vtx_attribs |= (1<<attrib_num);
     }
 
-    if (best_supported_index < 0 || best_supported_num_missing > num_missing) {
-      best_supported_index = supported_index;
-      best_supported_num_missing = num_missing;
-      best_use_vtx_attribs = use_vtx_attribs;
+    if (! best_vtx_type || best_num_missing > num_missing) {
+      best_vtx_type = vtx_type;
+      best_num_missing = num_missing;
+      best_buffer_size = buffer_size;
     }
   }
 
-  if (best_supported_index < 0)
-    return 0xff;
-  *ret_use_vtx_attribs = best_use_vtx_attribs;
-  return supported_vtx_types[best_supported_index].vtx_type;
+  if (ret_buffer_size)
+    *ret_buffer_size = best_buffer_size;
+  return best_vtx_type;
 }
 
-static int extract_vtx_buffer_size_from_attribs(struct GLTF_DATA *gltf,
-                                                struct GLTF_MESH_PRIMITIVE *prim,
-                                                uint16_t used_vtx_attribs,
-                                                uint32_t *p_vtx_buffer_size)
-{
-  uint32_t vtx_buffer_size = 0;
-  for (uint16_t attrib_num = 0; attrib_num < GLTF_MESH_NUM_ATTRIBS; attrib_num++) {
-    if (used_vtx_attribs & (1<<attrib_num)) {
-      struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[attrib_num]];
-      struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[accessor->buffer_view];
-      if (accessor->component_type != GLTF_ACCESSOR_COMP_TYPE_FLOAT && accessor->component_type != GLTF_ACCESSOR_COMP_TYPE_USHORT) {
-        debug_log("* WARNING: ignoring primitive with unsupported vertex attribute component type: %d\n", accessor->component_type);
-        return 1;
-      }
-      vtx_buffer_size += buffer_view->byte_length;
-    }
-  }
-
-  *p_vtx_buffer_size = vtx_buffer_size;
-  return 0;
-}
-
-// TODO: move this to supported_vtx_types array
-static int get_mesh_vtx_stride(struct MODEL_MESH *mesh)
-{
-  switch (mesh->vtx_type) {
-  case MODEL_MESH_VTX_POS:                  return sizeof(float)*(3);
-  case MODEL_MESH_VTX_POS_UV1:              return sizeof(float)*(3+2);
-  case MODEL_MESH_VTX_POS_UV2:              return sizeof(float)*(3+2+2);
-  case MODEL_MESH_VTX_POS_NORMAL:           return sizeof(float)*(3+3);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1:       return sizeof(float)*(3+3+2);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2:       return sizeof(float)*(3+3+2+2);
-  case MODEL_MESH_VTX_POS_SKEL1:            return sizeof(float)*(3+1) + sizeof(uint16_t)*(4);
-  case MODEL_MESH_VTX_POS_UV1_SKEL1:        return sizeof(float)*(3+2+4) + sizeof(uint16_t)*(4);
-  case MODEL_MESH_VTX_POS_UV2_SKEL1:        return sizeof(float)*(3+2+2+4) + sizeof(uint16_t)*(4);
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL1:     return sizeof(float)*(3+3+4) + sizeof(uint16_t)*(4);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1: return sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*(4);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1: return sizeof(float)*(3+3+2+2+4) + sizeof(uint16_t)*(4);
-  case MODEL_MESH_VTX_POS_SKEL2:            return sizeof(float)*(3+4+4) + sizeof(uint16_t)*(4+4);
-  case MODEL_MESH_VTX_POS_UV1_SKEL2:        return sizeof(float)*(3+2+4+4) + sizeof(uint16_t)*(4+4);
-  case MODEL_MESH_VTX_POS_UV2_SKEL2:        return sizeof(float)*(3+2+2+4+4) + sizeof(uint16_t)*(4+4);
-  case MODEL_MESH_VTX_POS_NORMAL_SKEL2:     return sizeof(float)*(3+3+4+4) + sizeof(uint16_t)*(4+4);
-  case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2: return sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4);
-  case MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2: return sizeof(float)*(3+3+2+2+4+4) + sizeof(uint16_t)*(4+4);
-  default: return 0;
-  }
-}
-
-// TODO: move this to a supported_vtx_types array
-static int get_gltf_mesh_attrib_size(uint16_t attrib_num)
-{
-  switch (attrib_num) {
-  case GLTF_MESH_ATTRIB_POSITION: return sizeof(float) * 3;
-  case GLTF_MESH_ATTRIB_NORMAL:   return sizeof(float) * 3;
-  case GLTF_MESH_ATTRIB_TANGENT:  return sizeof(float) * 3;
-    
-  case GLTF_MESH_ATTRIB_TEXCOORD_0:
-  case GLTF_MESH_ATTRIB_TEXCOORD_1:
-  case GLTF_MESH_ATTRIB_TEXCOORD_2:
-  case GLTF_MESH_ATTRIB_TEXCOORD_3:
-  case GLTF_MESH_ATTRIB_TEXCOORD_4:
-    return sizeof(float) * 2;
-
-  case GLTF_MESH_ATTRIB_WEIGHTS_0:
-  case GLTF_MESH_ATTRIB_WEIGHTS_1:
-    return sizeof(float) * 4;
-
-  case GLTF_MESH_ATTRIB_JOINTS_0:
-  case GLTF_MESH_ATTRIB_JOINTS_1:
-    return sizeof(uint16_t) * 4;
-    
-  default:
-    return 0;
-  }
-}
-
-static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER *reader, struct GLTF_MESH_PRIMITIVE *prim, uint16_t used_vtx_attribs)
+static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER *reader, struct GLTF_MESH_PRIMITIVE *prim, const struct MODEL_MESH_VTX_TYPE *vtx_type)
 {
   struct GLTF_DATA *gltf = reader->gltf;
 
-  int vtx_stride = get_mesh_vtx_stride(mesh);
-
+  uint16_t vtx_stride = get_vtx_type_size(vtx_type);
+  
   int attr_off = 0;
-  for (uint16_t attrib_num = 0; attrib_num < GLTF_MESH_NUM_ATTRIBS; attrib_num++) {
-    if (used_vtx_attribs & (1<<attrib_num)) {
-      struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[attrib_num]];
-      struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[accessor->buffer_view];
+  for (int i = 0; i < vtx_type->n_attribs; i++) {
+    uint16_t attrib_num = vtx_type->attribs[i].attrib_num;
+    struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[attrib_num]];
+    struct GLTF_BUFFER_VIEW *buffer_view = &gltf->buffer_views[accessor->buffer_view];
+    
+    uint32_t buffer_byte_offset = buffer_view->byte_offset + accessor->byte_offset;
+    if (set_file_pos(reader, buffer_byte_offset) != 0)
+      return 1;
+    
+    int attr_size = get_vtx_type_attrib_size(&vtx_type->attribs[i]);
+    
+    debug_log("  -> reading %d vtx elements from buffer offset %-6d stride %-2d -- attribute %2d, size %2d, stride %2d, offset %d\n",
+              accessor->count, buffer_byte_offset, buffer_view->byte_stride, attrib_num, attr_size, vtx_stride, attr_off);
 
-      uint32_t buffer_byte_offset = buffer_view->byte_offset + accessor->byte_offset;
-      if (set_file_pos(reader, buffer_byte_offset) != 0)
+    char *vtx = (char *)mesh->vtx + attr_off;
+    for (uint32_t i = 0; i < accessor->count; i++) {
+      if (read_file_data(reader, vtx, attr_size) != 0)
         return 1;
-
-      int attr_size = get_gltf_mesh_attrib_size(attrib_num);
-
-      debug_log("  -> reading %d vtx elements from buffer offset %-6d stride %-2d -- attribute %2d, size %2d, stride %2d, offset %d\n",
-                accessor->count, buffer_byte_offset, buffer_view->byte_stride, attrib_num, attr_size, vtx_stride, attr_off);
-
-      char *vtx = (char *)mesh->vtx + attr_off;
-      for (uint32_t i = 0; i < accessor->count; i++) {
-        if (read_file_data(reader, vtx, attr_size) != 0)
+      vtx += vtx_stride;
+      if (buffer_view->byte_stride != 0 && buffer_view->byte_stride != (unsigned) attr_size) {
+        if (buffer_view->byte_stride < (unsigned) attr_size) {
+          debug_log("** ERROR: invalid byte stride: %d (attribute size is %d)\n", buffer_view->byte_stride, attr_size);
           return 1;
-        vtx += vtx_stride;
-        if (buffer_view->byte_stride != 0 && buffer_view->byte_stride != (unsigned) attr_size) {
-          if (buffer_view->byte_stride < (unsigned) attr_size) {
-            debug_log("** ERROR: invalid byte stride: %d (attribute size is %d)\n", buffer_view->byte_stride, attr_size);
-            return 1;
-          }
-          if (skip_file_data(reader, buffer_view->byte_stride - (unsigned) attr_size) != 0)
-            return 1;
         }
+        if (skip_file_data(reader, buffer_view->byte_stride - (unsigned) attr_size) != 0)
+          return 1;
       }
-      attr_off += attr_size;
     }
+    attr_off += attr_size;
   }
   return 0;
 }
@@ -582,15 +541,12 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
   }
 
   // read vtx data info
-  uint16_t used_vtx_attribs;
-  uint8_t mesh_vtx_type = convert_gltf_vtx_type(reader->gltf, prim, &used_vtx_attribs);
-  if (mesh_vtx_type == 0xff) {
+  uint32_t vtx_buffer_size;
+  const struct MODEL_MESH_VTX_TYPE *vtx_type = convert_gltf_vtx_type(reader->gltf, prim, &vtx_buffer_size);
+  if (! vtx_type) {
     debug_log("* WARNING: ignoring primitive with unsupported vertex attributes (%x)\n", prim->attribs_present);
     return 0;
   }
-  uint32_t vtx_buffer_size;
-  if (extract_vtx_buffer_size_from_attribs(reader->gltf, prim, used_vtx_attribs, &vtx_buffer_size) != 0)
-    return 0;
 
   // read index data info
   struct GLTF_ACCESSOR *indices_accessor = &reader->gltf->accessors[prim->indices_accessor];
@@ -602,11 +558,11 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
   uint32_t ind_buffer_size = indices_accessor->count * convert_gltf_ind_size(indices_accessor->component_type);
   
   debug_log("-> adding mesh with vtx_size=%u, ind_size=%u\n", vtx_buffer_size, ind_buffer_size);
-  struct MODEL_MESH *model_mesh = new_model_mesh(mesh_vtx_type, vtx_buffer_size, mesh_ind_type, ind_buffer_size, indices_accessor->count);
+  struct MODEL_MESH *model_mesh = new_model_mesh(vtx_type->vtx_type, vtx_buffer_size, mesh_ind_type, ind_buffer_size, indices_accessor->count);
   mat4_copy(model_mesh->matrix, node->matrix);
 
   // extract mesh data
-  if (extract_vtx_buffer_data(model_mesh, reader, prim, used_vtx_attribs) != 0)
+  if (extract_vtx_buffer_data(model_mesh, reader, prim, vtx_type) != 0)
     return 1;
   if (extract_ind_buffer_data(model_mesh, reader, indices_accessor, ind_buffer_size) != 0)
     return 1;
