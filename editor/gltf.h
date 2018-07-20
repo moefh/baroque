@@ -143,6 +143,7 @@ struct GLTF_MESH {
 
 struct GLTF_NODE {
   float matrix[16];
+  float local_matrix[16];
   uint16_t mesh;
   uint16_t skin;
   uint16_t children[GLTF_MAX_NODE_CHILDREN];
@@ -186,6 +187,7 @@ struct GLTF_DATA {
   struct GLTF_SKIN        skins[GLTF_MAX_SKINS];
   struct GLTF_TEXTURE     textures[GLTF_MAX_TEXTURES];
   uint16_t scene;
+  uint16_t n_nodes;
 
   struct JSON_READER json;
   char json_text[];

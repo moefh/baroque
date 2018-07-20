@@ -10,8 +10,8 @@
 
 #define MODEL_TEXTURE_NONE 0xffff
 
-#define MODEL_MAX_TEXTURES 16
-#define MODEL_MAX_MESHES   16
+#define MODEL_MAX_TEXTURES 64
+#define MODEL_MAX_MESHES   128
 
 #define MODEL_MESH_VTX_POS                  0
 #define MODEL_MESH_VTX_POS_UV1              1

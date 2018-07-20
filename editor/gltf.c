@@ -81,7 +81,7 @@ static int read_node_prop(struct JSON_READER *reader, const char *name, void *da
   if (strcmp(name, "matrix") == 0) {
     info->has_matrix = 1;
     size_t num;
-    return read_json_float_array(reader, info->node->matrix, 16, &num) != 0 || num != 16;
+    return read_json_float_array(reader, info->node->local_matrix, 16, &num) != 0 || num != 16;
   }
   
   if (strcmp(name, "children") == 0) {
@@ -110,11 +110,13 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
   }
   struct GLTF_DATA *gltf = reader->data;
   struct GLTF_NODE *node = &gltf->nodes[index];
+  gltf->n_nodes = index+1;
+  
   struct JSON_NODE_INFO info = {
     .node = node,
   };
   
-  mat4_id(node->matrix);
+  mat4_id(node->local_matrix);
   node->mesh = GLTF_NONE;
   node->skin = GLTF_NONE;
   node->n_children = 0;
@@ -126,17 +128,17 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
       float rotation[16];
       quat_normalize(info.rotation);
       mat4_load_rot_quat(rotation, info.rotation);
-      mat4_mul_right(node->matrix, rotation);
+      mat4_mul_right(node->local_matrix, rotation);
     }
     if (info.has_translation) {
       float translation[16];
       mat4_load_translation(translation, info.translation[0], info.translation[1], info.translation[2]);
-      mat4_mul_right(node->matrix, translation);
+      mat4_mul_right(node->local_matrix, translation);
     }
     if (info.has_scale) {
       float scale[16];
       mat4_load_scale(scale, info.scale[0], info.scale[1], info.scale[2]);
-      mat4_mul_right(node->matrix, scale);
+      mat4_mul_right(node->local_matrix, scale);
     }
   }
   return 0;
@@ -711,6 +713,42 @@ static int read_main_prop(struct JSON_READER *reader, const char *name, void *da
   return skip_json_value(reader);
 }
 
+static void calc_node_matrix(struct GLTF_NODE *nodes, uint16_t node_index, const uint16_t *node_parents, uint8_t *node_matrix_done)
+{
+  if (node_matrix_done[node_index])
+    return;
+  if (node_parents[node_index] != GLTF_NONE) {
+    calc_node_matrix(nodes, node_parents[node_index], node_parents, node_matrix_done);
+    mat4_copy(nodes[node_index].matrix, nodes[node_parents[node_index]].matrix);
+    mat4_mul_left(nodes[node_index].matrix, nodes[node_index].local_matrix);
+  } else {
+    mat4_copy(nodes[node_index].matrix, nodes[node_index].local_matrix);
+  }
+  node_matrix_done[node_index] = 1;
+}
+
+static int finish_gltf_processing(struct GLTF_DATA *gltf)
+{
+  // calculate node parents
+  uint16_t node_parents[GLTF_MAX_NODES];
+  for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++)
+    node_parents[node_index] = GLTF_NONE;
+  for (int node_index = 0; node_index < gltf->n_nodes; node_index++) {
+    struct GLTF_NODE *node = &gltf->nodes[node_index];
+    for (uint16_t i = 0; i < node->n_children; i++) {
+      uint16_t child_index = node->children[i];
+      node_parents[child_index] = node_index;
+    }
+  }
+
+  // calculate node matrices
+  uint8_t node_matrix_done[GLTF_MAX_NODES] = { 0 };
+  for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++)
+    calc_node_matrix(gltf->nodes, node_index, node_parents, node_matrix_done);
+
+  return 0;
+}
+
 static struct GLTF_DATA *new_gltf_data(size_t json_len)
 {
   struct GLTF_DATA *gltf = malloc(sizeof *gltf + json_len);
@@ -740,6 +778,10 @@ static struct GLTF_DATA *parse_gltf_json_file(FILE *f, size_t json_len)
   skip_json_spaces(&gltf->json);
   if (*gltf->json.json != '\0')
     goto err;
+
+  if (finish_gltf_processing(gltf) != 0)
+    goto err;
+  
   return gltf;
 
  err:
@@ -815,7 +857,7 @@ int open_glb(struct GLB_FILE *glb, const char *filename)
 
     // JSON chunk
     if (memcmp(chunk_header + 4, "JSON", 4) == 0) {
-      if (chunk_len == 0 || chunk_len > 0x10000)    // sanity check
+      if (chunk_len == 0 || chunk_len > 0x100000)    // sanity check
         goto err;
       gltf = parse_gltf_json_file(f, chunk_len);
       if (! gltf)

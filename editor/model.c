@@ -11,7 +11,7 @@
 #include "gltf.h"
 #include "matrix.h"
 
-//#define DEBUG_MODEL_READER
+#define DEBUG_MODEL_READER
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
 #else
@@ -26,6 +26,176 @@ struct MODEL_READER {
   uint32_t data_len;
   uint32_t read_flags;
   uint16_t converted_textures[GLTF_MAX_TEXTURES];  // converted_textures[gltf_texture_index] = model_texture_index
+};
+
+static struct SUPPORTED_VTX_TYPE {
+  uint8_t vtx_type;
+  uint8_t n_attribs;
+  struct SUPPORTED_VTX_TYPE_ATTRIB {
+    uint16_t attrib_num;
+    uint16_t accessor_type;
+    uint16_t accessor_component_type;
+  } attribs[16];
+} supported_vtx_types[] = {
+#define ATTR_DEF(attr, type, comp_type) { GLTF_MESH_ATTRIB_ ## attr, GLTF_ACCESSOR_TYPE_ ## type, GLTF_ACCESSOR_COMP_TYPE_ ## comp_type }
+  
+  { MODEL_MESH_VTX_POS,
+    1, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL,
+    2, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_UV1,
+    2, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_UV2,
+    3, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(TEXCOORD_1, VEC2, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1,
+    3, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_UV2,
+    4, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(TEXCOORD_1, VEC2, FLOAT),
+    }
+  },
+
+  { MODEL_MESH_VTX_POS_SKEL1,
+    3, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_SKEL1,
+    4, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_UV1_SKEL1,
+    4, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_UV2_SKEL1,
+    5, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(TEXCOORD_1, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1,
+    5, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1,
+    6, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(TEXCOORD_1, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+    }
+  },
+  
+  { MODEL_MESH_VTX_POS_SKEL2,
+    3, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+      ATTR_DEF(JOINTS_1, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_1, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_SKEL2,
+    4, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+      ATTR_DEF(JOINTS_1, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_1, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_UV1_SKEL2,
+    4, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+      ATTR_DEF(JOINTS_1, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_1, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_UV2_SKEL2,
+    5, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(TEXCOORD_1, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+      ATTR_DEF(JOINTS_1, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_1, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2,
+    5, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+      ATTR_DEF(JOINTS_1, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_1, VEC4, FLOAT),
+    }
+  },
+  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2,
+    6, {
+      ATTR_DEF(POSITION, VEC3, FLOAT),
+      ATTR_DEF(NORMAL, VEC3, FLOAT),
+      ATTR_DEF(TEXCOORD_0, VEC2, FLOAT),
+      ATTR_DEF(TEXCOORD_1, VEC2, FLOAT),
+      ATTR_DEF(JOINTS_0, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_0, VEC4, FLOAT),
+      ATTR_DEF(JOINTS_1, VEC4, USHORT),
+      ATTR_DEF(WEIGHTS_1, VEC4, FLOAT),
+    }
+  },
+  
+#undef ATTR_DEF  
 };
 
 static int set_file_pos(struct MODEL_READER *reader, uint32_t data_off)
@@ -158,67 +328,73 @@ struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t i
   return mesh;
 }
 
-static struct MODEL_MESH_VTX_TYPE {
-  uint8_t vtx_type;
-  uint16_t gltf_attrib_flags;
-} model_mesh_vtx_types[] = {
-  // the order here matters (fuller flags go first):
-
-#define GLTF_SKEL2_ATTRIBS (1<<GLTF_MESH_ATTRIB_JOINTS_0)|(1<<GLTF_MESH_ATTRIB_JOINTS_1)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_0)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_1)
-  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL2_ATTRIBS },
-  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL2_ATTRIBS },
-  { MODEL_MESH_VTX_POS_NORMAL_SKEL2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|GLTF_SKEL2_ATTRIBS },
-  { MODEL_MESH_VTX_POS_UV2_SKEL2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL2_ATTRIBS },
-  { MODEL_MESH_VTX_POS_UV1_SKEL2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL2_ATTRIBS },
-  { MODEL_MESH_VTX_POS_SKEL2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|GLTF_SKEL2_ATTRIBS },
-#undef GLTF_SKEL2_ATTRIBS
-  
-#define GLTF_SKEL1_ATTRIBS (1<<GLTF_MESH_ATTRIB_JOINTS_0)|(1<<GLTF_MESH_ATTRIB_WEIGHTS_0)
-  { MODEL_MESH_VTX_POS_NORMAL_UV2_SKEL1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL1_ATTRIBS },
-  { MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL1_ATTRIBS },
-  { MODEL_MESH_VTX_POS_NORMAL_SKEL1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|GLTF_SKEL1_ATTRIBS },
-  { MODEL_MESH_VTX_POS_UV2_SKEL1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1)|GLTF_SKEL1_ATTRIBS },
-  { MODEL_MESH_VTX_POS_UV1_SKEL1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|GLTF_SKEL1_ATTRIBS },
-  { MODEL_MESH_VTX_POS_SKEL1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|GLTF_SKEL1_ATTRIBS },
-#undef GLTF_SKEL1_ATTRIBS
-
-  { MODEL_MESH_VTX_POS_NORMAL_UV2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1) },
-  { MODEL_MESH_VTX_POS_NORMAL_UV1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0) },
-  { MODEL_MESH_VTX_POS_NORMAL,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_NORMAL) },
-  { MODEL_MESH_VTX_POS_UV2,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_1) },
-  { MODEL_MESH_VTX_POS_UV1,
-    (1<<GLTF_MESH_ATTRIB_POSITION)|(1<<GLTF_MESH_ATTRIB_TEXCOORD_0) },
-  { MODEL_MESH_VTX_POS,
-    (1<<GLTF_MESH_ATTRIB_POSITION) },
-};
-
-static uint8_t convert_gltf_vtx_type(uint16_t prim_attribs_present, uint16_t *use_vtx_attribs)
+static uint8_t convert_gltf_vtx_type(struct GLTF_DATA *gltf, struct GLTF_MESH_PRIMITIVE *prim, uint16_t *ret_use_vtx_attribs)
 {
-  for (size_t i = 0; i < sizeof(model_mesh_vtx_types)/sizeof(model_mesh_vtx_types[0]); i++) {
-    struct MODEL_MESH_VTX_TYPE *type = &model_mesh_vtx_types[i];
-    if ((prim_attribs_present & type->gltf_attrib_flags) == type->gltf_attrib_flags) {
-      *use_vtx_attribs = type->gltf_attrib_flags;
-      return type->vtx_type;
+  int best_supported_index = -1;
+  int best_supported_num_missing = 0;
+  uint16_t best_use_vtx_attribs = 0;
+  
+  for (int supported_index = 0; supported_index < (int) (sizeof(supported_vtx_types)/sizeof(supported_vtx_types[0])); supported_index++) {
+    struct SUPPORTED_VTX_TYPE *type = &supported_vtx_types[supported_index];
+
+    // check if accessor types are supported
+    int supported = 1;
+    for (uint8_t i = 0; i < type->n_attribs; i++) {
+      if (! (prim->attribs_present & (1<<type->attribs[i].attrib_num)))
+        continue;
+      struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[type->attribs[i].attrib_num]];
+      if (accessor->type != type->attribs[i].accessor_type && accessor->component_type != type->attribs[i].accessor_component_type) {
+        printf("**** bad type [%d][%d]: have (%d,%d), want (%d,%d)\n",
+               supported_index, type->attribs[i].attrib_num,
+               accessor->type, accessor->component_type,
+               type->attribs[i].accessor_type, type->attribs[i].accessor_component_type);
+        supported = 0;
+        break;
+      }
+    }
+    if (! supported)
+      continue;
+
+    // check if primitive has all attributes
+    for (uint8_t i = 0; i < type->n_attribs; i++) {
+      if (! (prim->attribs_present & (1<<type->attribs[i].attrib_num))) {
+        supported = 0;
+        break;
+      }
+    }
+    if (! supported)
+      continue;
+
+    // count all attribs that are not supported
+    int num_missing = 0;
+    uint16_t use_vtx_attribs = 0;
+    for (int attrib_num = 0; attrib_num < GLTF_MESH_NUM_ATTRIBS; attrib_num++) {
+      if (! (prim->attribs_present & (1<<attrib_num)))
+        continue;
+      int found = 0;
+      for (uint8_t i = 0; i < type->n_attribs; i++) {
+        if (type->attribs[i].attrib_num == attrib_num) {
+          found = 1;
+          break;
+        }
+      }
+      if (! found)
+        num_missing++;
+      else
+        use_vtx_attribs |= (1<<attrib_num);
+    }
+
+    if (best_supported_index < 0 || best_supported_num_missing > num_missing) {
+      best_supported_index = supported_index;
+      best_supported_num_missing = num_missing;
+      best_use_vtx_attribs = use_vtx_attribs;
     }
   }
-  
-  return 0xff;
+
+  if (best_supported_index < 0)
+    return 0xff;
+  *ret_use_vtx_attribs = best_use_vtx_attribs;
+  return supported_vtx_types[best_supported_index].vtx_type;
 }
 
 static int extract_vtx_buffer_size_from_attribs(struct GLTF_DATA *gltf,
@@ -243,6 +419,7 @@ static int extract_vtx_buffer_size_from_attribs(struct GLTF_DATA *gltf,
   return 0;
 }
 
+// TODO: move this to supported_vtx_types array
 static int get_mesh_vtx_stride(struct MODEL_MESH *mesh)
 {
   switch (mesh->vtx_type) {
@@ -268,6 +445,7 @@ static int get_mesh_vtx_stride(struct MODEL_MESH *mesh)
   }
 }
 
+// TODO: move this to a supported_vtx_types array
 static int get_gltf_mesh_attrib_size(uint16_t attrib_num)
 {
   switch (attrib_num) {
@@ -322,11 +500,11 @@ static int extract_vtx_buffer_data(struct MODEL_MESH *mesh, struct MODEL_READER 
           return 1;
         vtx += vtx_stride;
         if (buffer_view->byte_stride != 0 && buffer_view->byte_stride != (unsigned) attr_size) {
-          if ((unsigned) attr_size < buffer_view->byte_stride) {
+          if (buffer_view->byte_stride < (unsigned) attr_size) {
             debug_log("** ERROR: invalid byte stride: %d (attribute size is %d)\n", buffer_view->byte_stride, attr_size);
             return 1;
           }
-          if (skip_file_data(reader, (unsigned) attr_size - buffer_view->byte_stride) != 0)
+          if (skip_file_data(reader, buffer_view->byte_stride - (unsigned) attr_size) != 0)
             return 1;
         }
       }
@@ -405,7 +583,7 @@ static int convert_gltf_mesh_primitive(struct MODEL_READER *reader, struct GLTF_
 
   // read vtx data info
   uint16_t used_vtx_attribs;
-  uint8_t mesh_vtx_type = convert_gltf_vtx_type(prim->attribs_present, &used_vtx_attribs);
+  uint8_t mesh_vtx_type = convert_gltf_vtx_type(reader->gltf, prim, &used_vtx_attribs);
   if (mesh_vtx_type == 0xff) {
     debug_log("* WARNING: ignoring primitive with unsupported vertex attributes (%x)\n", prim->attribs_present);
     return 0;
