@@ -720,7 +720,8 @@ static void calc_node_matrix(struct GLTF_NODE *nodes, uint16_t node_index, const
   if (node_parents[node_index] != GLTF_NONE) {
     calc_node_matrix(nodes, node_parents[node_index], node_parents, node_matrix_done);
     mat4_copy(nodes[node_index].matrix, nodes[node_parents[node_index]].matrix);
-    mat4_mul_left(nodes[node_index].matrix, nodes[node_index].local_matrix);
+    //mat4_mul_left(nodes[node_index].matrix, nodes[node_index].local_matrix);
+    mat4_mul_right(nodes[node_index].matrix, nodes[node_index].local_matrix);
   } else {
     mat4_copy(nodes[node_index].matrix, nodes[node_index].local_matrix);
   }
@@ -746,6 +747,13 @@ static int finish_gltf_processing(struct GLTF_DATA *gltf)
   for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++)
     calc_node_matrix(gltf->nodes, node_index, node_parents, node_matrix_done);
 
+#if 0
+  for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++) {
+    printf("**** node %d matrix:\n", node_index);
+    mat4_dump(gltf->nodes[node_index].matrix);
+  }
+#endif
+  
   return 0;
 }
 

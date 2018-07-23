@@ -223,6 +223,11 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
     }
     break;
 
+  case GFX_MESH_TYPE_TEST:
+    mat4_id(mat_model);
+    vec4_load(color, 1, 1, 1, 1);
+    break;
+    
   default:
     return;
   }

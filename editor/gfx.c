@@ -170,7 +170,7 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
 
   default:
-    console("*** WARNING: unknown mesh vertex type\n");
+    console("*** WARNING: unhandled mesh vertex type: %d\n", mesh->vtx_type);
     break;
   }    
   return gfx;

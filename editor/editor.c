@@ -47,6 +47,12 @@ struct EDITOR_COMMAND {
 
 static const struct EDITOR_COMMAND *get_editor_commands(void);
 
+static struct {
+  int loaded;
+  struct MODEL_SKELETON skel;
+  struct MODEL model;
+} anim;
+
 struct MOUSE_ACTION {
   int action_id;
   int allow_axis_flags;
@@ -879,6 +885,32 @@ static void cmd_add(const char *line, int argc, char **argv)
   }
 }
 
+static void cmd_anim(const char *line, int argc, char **argv)
+{
+  if (argc != 2) {
+    out_text("USAGE: anim name\n");
+    return;
+  }
+  const char *name = argv[1];
+
+  if (anim.loaded) {
+    gfx_free_meshes(GFX_MESH_TYPE_TEST, 0);
+    free_model(&anim.model);
+    free_model_skeleton(&anim.skel);
+    anim.loaded = 0;
+  }
+
+  char filename[256];
+  snprintf(filename, sizeof(filename), "data/%s.glb", name);
+  if (read_glb_animated_model(&anim.model, &anim.skel, filename, 0) != 0) {
+    out_text("** ERROR: can't load '%s'\n", filename);
+    return;
+  }
+  gfx_upload_model(&anim.model, GFX_MESH_TYPE_TEST, 0, &anim.skel);
+
+  anim.loaded = 1;
+}
+
 static void cmd_remove(const char *line, int argc, char **argv)
 {
   if (argc != 2) {
@@ -1086,6 +1118,8 @@ static void cmd_sysinfo(const char *line, int argc, char **argv)
 }
 
 static const struct EDITOR_COMMAND commands[] = {
+  { "anim",     cmd_anim,     "Load animated model (for testing)" },
+
   { "save",     cmd_save,     "Save map" },
   { "load",     cmd_load,     "Load map" },
   { "keys",     cmd_keys,     "Show key/mouse shortcuts" },

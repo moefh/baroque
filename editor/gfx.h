@@ -15,6 +15,7 @@
 #define GFX_MESH_TYPE_ROOM 0
 #define GFX_MESH_TYPE_FONT 1
 #define GFX_MESH_TYPE_GRID 2
+#define GFX_MESH_TYPE_TEST 3
 
 struct GFX_TEXTURE {
   int use_count;

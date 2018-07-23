@@ -10,8 +10,10 @@
 
 #define MODEL_TEXTURE_NONE 0xffff
 
-#define MODEL_MAX_TEXTURES 64
-#define MODEL_MAX_MESHES   128
+#define MODEL_MAX_TEXTURES    64
+#define MODEL_MAX_MESHES      128
+#define MODEL_MAX_BONES       32
+#define MODEL_MAX_ANIMATIONS  64
 
 #define MODEL_MESH_VTX_POS                  0
 #define MODEL_MESH_VTX_POS_UV1              1
@@ -66,8 +68,22 @@ struct MODEL {
   struct MODEL_TEXTURE textures[MODEL_MAX_TEXTURES];
 };
 
+struct MODEL_BONE {
+  int parent;
+  float *inv_matrix;
+  float *pose_matrix;
+};
+
+struct MODEL_SKELETON {
+  int n_bones;
+  struct MODEL_BONE bones[MODEL_MAX_BONES];
+  float *float_data;
+};
+
 struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t ind_type, uint32_t ind_size, uint32_t ind_count);
 int read_glb_model(struct MODEL *model, const char *filename, uint32_t flags);
+int read_glb_animated_model(struct MODEL *model, struct MODEL_SKELETON *skel, const char *filename, uint32_t flags);
 void free_model(struct MODEL *model);
+void free_model_skeleton(struct MODEL_SKELETON *skel);
 
 #endif /* MODEL_H_FILE */
