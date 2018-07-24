@@ -298,7 +298,6 @@ static int read_scene_prop(struct JSON_READER *reader, const char *name, void *d
     if (read_json_u16_array(reader, scene->nodes, GLTF_MAX_SCENE_NODES, &n_nodes) != 0)
       return 1;
     scene->n_nodes = n_nodes;
-    //debug_log("-> got %u nodes in scene\n", scene->n_nodes);
     return 0;
   }
 
@@ -666,6 +665,147 @@ static int read_skins_element(struct JSON_READER *reader, int index, void *data)
   return read_json_object(reader, read_skin_prop, skin);
 }
 
+static int read_animation_channel_target_prop(struct JSON_READER *reader, const char *name, void *data)
+{
+  struct GLTF_ANIMATION_CHANNEL *chan = data;
+
+  if (strcmp(name, "node") == 0)
+    return read_json_u16(reader, &chan->target_node);
+
+  if (strcmp(name, "path") == 0) {
+    char path[64];
+    if (read_json_string(reader, path, sizeof(path)) != 0)
+      return 1;
+    if (strcmp(path, "translation") == 0) {
+      chan->target_path = GLTF_ANIMATION_PATH_TRANSLATION;
+    } else if (strcmp(path, "rotation") == 0) {
+      chan->target_path = GLTF_ANIMATION_PATH_ROTATION;
+    } else if (strcmp(path, "scale") == 0) {
+      chan->target_path = GLTF_ANIMATION_PATH_SCALE;
+    } else if (strcmp(path, "weights") == 0) {
+      chan->target_path = GLTF_ANIMATION_PATH_WEIGHTS;
+    } else {
+      debug_log("** ERROR: invalid value for animation.channel.target.path: \"%s\"\n", path);
+      return 1;
+    }
+    return 0;
+  }
+  
+  debug_log("-> skipping 'animation.channel.target.%s'\n", name);
+  return skip_json_value(reader);
+}
+
+static int read_animation_channel_prop(struct JSON_READER *reader, const char *name, void *data)
+{
+  struct GLTF_ANIMATION_CHANNEL *chan = data;
+
+  if (strcmp(name, "sampler") == 0)
+    return read_json_u16(reader, &chan->sampler);
+
+  if (strcmp(name, "target") == 0)
+    return read_json_object(reader, read_animation_channel_target_prop, chan);
+  
+  debug_log("-> skipping 'animation.channel.%s'\n", name);
+  return skip_json_value(reader);
+}
+
+static int read_animation_channels_element(struct JSON_READER *reader, int index, void *data)
+{
+  if (index >= GLTF_MAX_ANIMATION_CHANNELS) {
+    debug_log("* ERROR: too many animation channels (%d)\n", index);
+    return 1;
+  }
+  struct GLTF_ANIMATION *anim = data;
+  anim->n_channels = index+1;
+  struct GLTF_ANIMATION_CHANNEL *chan = &anim->channels[index];
+  chan->sampler = GLTF_NONE;
+  chan->target_node = GLTF_NONE;
+  chan->target_path = GLTF_NONE;
+
+  return read_json_object(reader, read_animation_channel_prop, chan);
+}
+
+static int read_animation_sampler_prop(struct JSON_READER *reader, const char *name, void *data)
+{
+  struct GLTF_ANIMATION_SAMPLER *sampler = data;
+
+  if (strcmp(name, "input") == 0)
+    return read_json_u16(reader, &sampler->input);
+
+  if (strcmp(name, "output") == 0)
+    return read_json_u16(reader, &sampler->output);
+  
+  if (strcmp(name, "interpolation") == 0) {
+    char interp[64];
+    if (read_json_string(reader, interp, sizeof(interp)) != 0)
+      return 1;
+    if (strcmp(interp, "LINEAR") == 0) {
+      sampler->interpolation = GLTF_ANIMATION_INTERP_LINEAR;
+    } else if (strcmp(interp, "STEP") == 0) {
+      sampler->interpolation = GLTF_ANIMATION_INTERP_STEP;
+    } else if (strcmp(interp, "CUBICSPLINE") == 0) {
+      sampler->interpolation = GLTF_ANIMATION_INTERP_CUBICSPLINE;
+    } else {
+      debug_log("** ERROR: invalid value for animation.sampler.interpolation: \"%s\"\n", interp);
+      return 1;
+    }
+    return 0;
+  }
+  
+  debug_log("-> skipping 'animation.sampler.%s'\n", name);
+  return skip_json_value(reader);
+}
+
+static int read_animation_samplers_element(struct JSON_READER *reader, int index, void *data)
+{
+  if (index >= GLTF_MAX_ANIMATION_SAMPLERS) {
+    debug_log("* ERROR: too many animation samplers (%d)\n", index);
+    return 1;
+  }
+  struct GLTF_ANIMATION *anim = data;
+  anim->n_samplers = index+1;
+  struct GLTF_ANIMATION_SAMPLER *sampler = &anim->samplers[index];
+  sampler->input = GLTF_NONE;
+  sampler->output = GLTF_NONE;
+  sampler->interpolation = GLTF_ANIMATION_INTERP_LINEAR;
+
+  return read_json_object(reader, read_animation_sampler_prop, sampler);
+}
+
+static int read_animation_prop(struct JSON_READER *reader, const char *name, void *data)
+{
+  struct GLTF_ANIMATION *anim = data;
+
+  if (strcmp(name, "name") == 0)
+    return read_json_string(reader, anim->name, sizeof(anim->name));
+
+  if (strcmp(name, "channels") == 0)
+    return read_json_array(reader, read_animation_channels_element, anim);
+  
+  if (strcmp(name, "samplers") == 0)
+    return read_json_array(reader, read_animation_samplers_element, anim);
+  
+  debug_log("-> skipping 'animation.%s'\n", name);
+  return skip_json_value(reader);
+}
+
+static int read_animations_element(struct JSON_READER *reader, int index, void *data)
+{
+  if (index >= GLTF_MAX_ANIMATIONS) {
+    debug_log("* ERROR: too many animations (%d)\n", index);
+    return 1;
+  }
+  struct GLTF_DATA *gltf = reader->data;
+  gltf->n_animations = index+1;
+  
+  struct GLTF_ANIMATION *anim = &gltf->animations[index];
+  anim->name[0] = '\0';
+  anim->n_channels = 0;
+  anim->n_samplers = 0;
+  
+  return read_json_object(reader, read_animation_prop, anim);
+}
+
 static int read_main_prop(struct JSON_READER *reader, const char *name, void *data)
 {
   struct GLTF_DATA *gltf = reader->data;
@@ -708,6 +848,9 @@ static int read_main_prop(struct JSON_READER *reader, const char *name, void *da
 
   if (strcmp(name, "skins") == 0)
     return read_json_array(reader, read_skins_element, NULL);
+
+  if (strcmp(name, "animations") == 0)
+    return read_json_array(reader, read_animations_element, NULL);
   
   debug_log("-> skipping '%s'\n", name);
   return skip_json_value(reader);
@@ -720,7 +863,6 @@ static void calc_node_matrix(struct GLTF_NODE *nodes, uint16_t node_index, const
   if (node_parents[node_index] != GLTF_NONE) {
     calc_node_matrix(nodes, node_parents[node_index], node_parents, node_matrix_done);
     mat4_copy(nodes[node_index].matrix, nodes[node_parents[node_index]].matrix);
-    //mat4_mul_left(nodes[node_index].matrix, nodes[node_index].local_matrix);
     mat4_mul_right(nodes[node_index].matrix, nodes[node_index].local_matrix);
   } else {
     mat4_copy(nodes[node_index].matrix, nodes[node_index].local_matrix);
@@ -779,6 +921,8 @@ static struct GLTF_DATA *parse_gltf_json_file(FILE *f, size_t json_len)
     goto err;
   gltf->json_text[json_len] = '\0';
   gltf->scene = GLTF_NONE;
+  gltf->n_nodes = 0;
+  gltf->n_animations = 0;
   
   if (read_json_object(&gltf->json, read_main_prop, NULL) != 0)
     goto err;

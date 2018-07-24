@@ -6,21 +6,24 @@
 #include <stdint.h>
 #include "json.h"
 
-#define GLTF_MAX_MESH_PRIMITIVES 8
-#define GLTF_MAX_NODE_CHILDREN   32
-#define GLTF_MAX_SCENE_NODES     8
-#define GLTF_MAX_ACCESSORS       256
-#define GLTF_MAX_BUFFERS         16
-#define GLTF_MAX_BUFFER_VIEWS    128
-#define GLTF_MAX_IMAGES          32
-#define GLTF_MAX_MATERIALS       128
-#define GLTF_MAX_MESHES          128
-#define GLTF_MAX_NODES           128
-#define GLTF_MAX_SCENES          8
-#define GLTF_MAX_SAMPLERS        16
-#define GLTF_MAX_SKINS           8
-#define GLTF_MAX_SKIN_JOINTS     32
-#define GLTF_MAX_TEXTURES        16
+#define GLTF_MAX_MESH_PRIMITIVES         8
+#define GLTF_MAX_NODE_CHILDREN           32
+#define GLTF_MAX_SCENE_NODES             8
+#define GLTF_MAX_ACCESSORS               256
+#define GLTF_MAX_BUFFERS                 16
+#define GLTF_MAX_BUFFER_VIEWS            128
+#define GLTF_MAX_IMAGES                  32
+#define GLTF_MAX_MATERIALS               128
+#define GLTF_MAX_MESHES                  128
+#define GLTF_MAX_NODES                   128
+#define GLTF_MAX_SCENES                  8
+#define GLTF_MAX_SAMPLERS                16
+#define GLTF_MAX_SKINS                   8
+#define GLTF_MAX_SKIN_JOINTS             32
+#define GLTF_MAX_TEXTURES                16
+#define GLTF_MAX_ANIMATIONS              16
+#define GLTF_MAX_ANIMATION_CHANNELS      32
+#define GLTF_MAX_ANIMATION_SAMPLERS      32
 
 #define GLTF_NONE ((uint16_t)0xffff)
 
@@ -38,6 +41,15 @@
 #define GLTF_ACCESSOR_TYPE_MAT2   4
 #define GLTF_ACCESSOR_TYPE_MAT3   5
 #define GLTF_ACCESSOR_TYPE_MAT4   6
+
+#define GLTF_ANIMATION_PATH_TRANSLATION  0
+#define GLTF_ANIMATION_PATH_ROTATION     1
+#define GLTF_ANIMATION_PATH_SCALE        2
+#define GLTF_ANIMATION_PATH_WEIGHTS      3
+
+#define GLTF_ANIMATION_INTERP_LINEAR      0
+#define GLTF_ANIMATION_INTERP_STEP        1
+#define GLTF_ANIMATION_INTERP_CUBICSPLINE 2
 
 #define GLTF_BUFFER_VIEW_TARGET_ARRAY         34962
 #define GLTF_BUFFER_VIEW_TARGET_ELEMENT_ARRAY 34963
@@ -89,6 +101,26 @@ struct GLTF_ACCESSOR {
   uint16_t type;
   uint16_t component_type;
   uint8_t normalized;
+};
+
+struct GLTF_ANIMATION_CHANNEL {
+  uint16_t sampler;
+  uint16_t target_path;
+  uint16_t target_node;
+};
+
+struct GLTF_ANIMATION_SAMPLER {
+  uint16_t input;
+  uint16_t output;
+  uint16_t interpolation;
+};
+
+struct GLTF_ANIMATION {
+  char name[64];
+  uint16_t n_channels;
+  uint16_t n_samplers;
+  struct GLTF_ANIMATION_CHANNEL channels[GLTF_MAX_ANIMATION_CHANNELS];
+  struct GLTF_ANIMATION_SAMPLER samplers[GLTF_MAX_ANIMATION_SAMPLERS];
 };
 
 struct GLTF_BUFFER {
@@ -176,6 +208,7 @@ struct GLTF_TEXTURE {
 
 struct GLTF_DATA {
   struct GLTF_ACCESSOR    accessors[GLTF_MAX_ACCESSORS];
+  struct GLTF_ANIMATION   animations[GLTF_MAX_ANIMATIONS];
   struct GLTF_BUFFER      buffers[GLTF_MAX_BUFFERS];
   struct GLTF_BUFFER_VIEW buffer_views[GLTF_MAX_BUFFER_VIEWS];
   struct GLTF_IMAGE       images[GLTF_MAX_IMAGES];
@@ -188,6 +221,7 @@ struct GLTF_DATA {
   struct GLTF_TEXTURE     textures[GLTF_MAX_TEXTURES];
   uint16_t scene;
   uint16_t n_nodes;
+  uint16_t n_animations;
 
   struct JSON_READER json;
   char json_text[];
