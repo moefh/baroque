@@ -27,6 +27,8 @@ struct MODEL_READER {
   uint16_t converted_textures[GLTF_MAX_TEXTURES];  // converted_textures[gltf_texture_index] = model_texture_index
 };
 
+// === STATIC MODEL ==================================
+
 static const struct MODEL_MESH_VTX_TYPE {
   int vtx_type;
   int n_attribs;
@@ -600,53 +602,41 @@ static int read_gltf_model_meshes_from_node(struct MODEL_READER *reader, int nod
   return 0;
 }
 
-static int find_skin_and_mark_parents(struct GLTF_DATA *gltf, uint16_t node_index, uint16_t *node_parents, uint16_t *skin_index)
-{
-  struct GLTF_NODE *node = &gltf->nodes[node_index];
-  if (node->skin != GLTF_NONE) {
-    if (*skin_index != GLTF_NONE && *skin_index != node->skin) {
-      debug_log("** ERROR: unsupported format: multiple skins\n");
-      return 1;
-    }
-    *skin_index = node->skin;
-  }
+// === SKELETON ======================================
 
-  for (uint16_t i = 0; i < node->n_children; i++) {
-    uint16_t child_index = node->children[i];
-    if (child_index >= GLTF_MAX_NODES) {
-      debug_log("** ERROR: too many nodes\n");
-      return 1;
+static int find_model_skin_rec(struct GLTF_DATA *gltf, uint16_t *node_indices, int num_nodes, uint16_t *ret_skin_index)
+{
+  for (int i = 0; i < num_nodes; i++) {
+    struct GLTF_NODE *node = &gltf->nodes[node_indices[i]];
+    if (node->skin != GLTF_NONE) {
+      if (*ret_skin_index != GLTF_NONE && *ret_skin_index != node->skin) {
+        debug_log("** ERROR: unsupported format: multiple skins\n");
+        return 1;
+      }
+      *ret_skin_index = node->skin;
     }
-    node_parents[child_index] = node_index;
-    if (find_skin_and_mark_parents(gltf, child_index, node_parents, skin_index) != 0)
+    
+    if (find_model_skin_rec(gltf, node->children, node->n_children, ret_skin_index) != 0)
       return 1;
   }
   return 0;
 }
 
-static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETON *skel)
+struct GLTF_SKIN *find_model_skin(struct GLTF_DATA *gltf)
 {
-  struct GLTF_DATA *gltf = reader->gltf;
-  if (gltf->scene == GLTF_NONE)
-    return 1;
-
-  // read node parents and find skin
   struct GLTF_SCENE *scene = &gltf->scenes[gltf->scene];
   uint16_t skin_index = GLTF_NONE;
-  uint16_t node_parents[GLTF_MAX_NODES];
-  for (uint16_t i = 0; i < scene->n_nodes; i++) {
-    uint16_t node_index = scene->nodes[i];
-    node_parents[node_index] = GLTF_NONE;
-    if (find_skin_and_mark_parents(gltf, node_index, node_parents, &skin_index) != 0)
-      return 1;
-  }
+  if (find_model_skin_rec(gltf, scene->nodes, scene->n_nodes, &skin_index) != 0)
+    return NULL;
   if (skin_index == GLTF_NONE) {
-    debug_log("** ERROR: no skin found\n");
-    return 1;
+    debug_log("** ERROR: skin not found\n");
+    return NULL;
   }
-  struct GLTF_SKIN *skin = &gltf->skins[skin_index];
+  return &gltf->skins[skin_index];
+}
 
-  // read bones
+static int read_skeleton(struct GLTF_DATA *gltf, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin)
+{
   skel->n_bones = skin->n_joints;
   uint16_t node_bone_index[GLTF_MAX_NODES];
   for (uint16_t i = 0; i < GLTF_MAX_NODES; i++)
@@ -654,40 +644,48 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
   for (uint16_t i = 0; i < skin->n_joints; i++)
     node_bone_index[skin->joints[i]] = i;
   for (uint16_t i = 0; i < skin->n_joints; i++) {
-    uint16_t joint_parent = node_parents[skin->joints[i]];
+    uint16_t joint_parent = gltf->nodes[skin->joints[i]].parent;
     skel->bones[i].parent = node_bone_index[joint_parent];
   }
 
-  // allocate memory
   size_t data_size = skel->n_bones * 2 * sizeof(float) * 16;
   skel->float_data = malloc(data_size);
   if (! skel->float_data) {
-    debug_log("** ERROR: out of memory for skin: can't allocate %u bytes\n", (unsigned) data_size);
+    debug_log("** ERROR: out of memory for skeleton: can't allocate %u bytes\n", (unsigned) data_size);
     return 1;
   }
   for (int i = 0; i < skel->n_bones; i++) {
     skel->bones[i].inv_matrix = skel->float_data + i * 2*16;
     skel->bones[i].pose_matrix = skel->float_data + i * 2*16 + 16;
   }
+  return 0;
+}
 
-  // read pose matrix
+static int read_bone_pose_matrices(struct GLTF_DATA *gltf, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin)
+{
   uint16_t skin_root = skin->skeleton;
   if (skin_root == GLTF_NONE)
-    skin_root = scene->nodes[0];
-  for (int i = 0; i < skel->n_bones; i++) {
-    uint16_t node_index = skin->joints[i];
-    mat4_id(skel->bones[i].pose_matrix);
+    skin_root = gltf->scenes[gltf->scene].nodes[0];
+  for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
+    uint16_t node_index = skin->joints[bone_index];
+    mat4_id(skel->bones[bone_index].pose_matrix);
     while (node_index != GLTF_NONE && node_index < GLTF_MAX_NODES) {
       struct GLTF_NODE *node = &gltf->nodes[node_index];
       //printf("bone %d transformed by node %d:\n", i, node_index); mat4_dump(node->local_matrix);
-      mat4_mul_left(skel->bones[i].pose_matrix, node->local_matrix);
+      mat4_mul_left(skel->bones[bone_index].pose_matrix, node->local_matrix);
       if (node_index == skin_root)
         break;
-      node_index = node_parents[node_index];
+      node_index = gltf->nodes[node_index].parent;
     }
   }
   
-  // read bone inverse matrices
+  return 0;
+}
+
+static int read_bone_inverse_matrices(struct MODEL_READER *reader, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin)
+{
+  struct GLTF_DATA *gltf = reader->gltf;
+
   if (skin->inverse_bind_matrices == GLTF_NONE) {
     for (int i = 0; i < skel->n_bones; i++)
       mat4_id(skel->bones[i].inv_matrix);
@@ -712,6 +710,28 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
       mat4_transpose(skel->bones[i].inv_matrix, inv_matrix);
     }
   }
+
+  return 0;
+}
+
+static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETON *skel)
+{
+  struct GLTF_DATA *gltf = reader->gltf;
+  if (gltf->scene == GLTF_NONE)
+    return 1;
+
+  struct GLTF_SKIN *skin = find_model_skin(gltf);
+  if (! skin)
+    return 1;
+  
+  if (read_skeleton(gltf, skel, skin) != 0)
+    return 1;
+  
+  if (read_bone_pose_matrices(gltf, skel, skin) != 0)
+    return 1;
+  
+  if (read_bone_inverse_matrices(reader, skel, skin) != 0)
+    return 1;
   
   printf("bones:\n");
   for (int i = 0; i < skel->n_bones; i++) {

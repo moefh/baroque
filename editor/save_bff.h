@@ -8,5 +8,6 @@ struct MODEL;
 
 int write_bmf_file(const char *bmf_filename, const char *glb_filename);
 int write_bwf_file(const char *filename, struct EDITOR_ROOM_LIST *rooms);
+int write_bcf_file(const char *bcf_filename, const char *glb_filename);
 
 #endif /* SAVE_BFF_FILE */

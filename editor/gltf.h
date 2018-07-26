@@ -22,8 +22,8 @@
 #define GLTF_MAX_SKIN_JOINTS             32
 #define GLTF_MAX_TEXTURES                16
 #define GLTF_MAX_ANIMATIONS              16
-#define GLTF_MAX_ANIMATION_CHANNELS      32
-#define GLTF_MAX_ANIMATION_SAMPLERS      32
+#define GLTF_MAX_ANIMATION_CHANNELS      128
+#define GLTF_MAX_ANIMATION_SAMPLERS      128
 
 #define GLTF_NONE ((uint16_t)0xffff)
 
@@ -178,8 +178,9 @@ struct GLTF_NODE {
   float local_matrix[16];
   uint16_t mesh;
   uint16_t skin;
-  uint16_t children[GLTF_MAX_NODE_CHILDREN];
+  uint16_t parent;
   uint16_t n_children;
+  uint16_t children[GLTF_MAX_NODE_CHILDREN];
 };
 
 struct GLTF_SAMPLER {

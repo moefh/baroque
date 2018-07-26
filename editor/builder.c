@@ -25,6 +25,11 @@ static int convert_model(const char *in_filename, const char *out_filename)
   return write_bmf_file(out_filename, in_filename);
 }
 
+static int convert_character(const char *in_filename, const char *out_filename)
+{
+  return write_bcf_file(out_filename, in_filename);
+}
+
 int main(int argc, char *argv[])
 {
   if (argc != 4) {
@@ -33,6 +38,7 @@ int main(int argc, char *argv[])
     printf("commands:\n");
     printf("   world      convert json to bwf\n");
     printf("   model      convert glb to bmf\n");
+    printf("   char       convert glb to bcf\n");
     exit(1);
   }
   const char *command = argv[1];
@@ -45,6 +51,9 @@ int main(int argc, char *argv[])
   if (strcmp(command, "model") == 0)
     return convert_model(in_filename, out_filename);
 
+  if (strcmp(command, "char") == 0)
+    return convert_character(in_filename, out_filename);
+  
   printf("** ERROR: unknown command: '%s'\n", command);
   return 1;
 }

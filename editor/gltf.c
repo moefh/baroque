@@ -119,6 +119,7 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
   mat4_id(node->local_matrix);
   node->mesh = GLTF_NONE;
   node->skin = GLTF_NONE;
+  node->parent = GLTF_NONE;
   node->n_children = 0;
   if (read_json_object(reader, read_node_prop, &info) != 0)
     return 1;
@@ -856,14 +857,14 @@ static int read_main_prop(struct JSON_READER *reader, const char *name, void *da
   return skip_json_value(reader);
 }
 
-static void calc_node_matrix(struct GLTF_NODE *nodes, uint16_t node_index, const uint16_t *node_parents, uint8_t *node_matrix_done)
+static void calc_node_matrix(struct GLTF_NODE *nodes, uint16_t node_index, uint8_t *node_matrix_done)
 {
   if (node_matrix_done[node_index])
     return;
-  if (node_parents[node_index] != GLTF_NONE) {
-    calc_node_matrix(nodes, node_parents[node_index], node_parents, node_matrix_done);
-    mat4_copy(nodes[node_index].matrix, nodes[node_parents[node_index]].matrix);
-    mat4_mul_right(nodes[node_index].matrix, nodes[node_index].local_matrix);
+  uint16_t parent_index = nodes[node_index].parent;
+  if (parent_index != GLTF_NONE) {
+    calc_node_matrix(nodes, parent_index, node_matrix_done);
+    mat4_mul(nodes[node_index].matrix, nodes[parent_index].matrix, nodes[node_index].local_matrix);
   } else {
     mat4_copy(nodes[node_index].matrix, nodes[node_index].local_matrix);
   }
@@ -872,22 +873,23 @@ static void calc_node_matrix(struct GLTF_NODE *nodes, uint16_t node_index, const
 
 static int finish_gltf_processing(struct GLTF_DATA *gltf)
 {
-  // calculate node parents
-  uint16_t node_parents[GLTF_MAX_NODES];
-  for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++)
-    node_parents[node_index] = GLTF_NONE;
+  // mark node parents
   for (int node_index = 0; node_index < gltf->n_nodes; node_index++) {
     struct GLTF_NODE *node = &gltf->nodes[node_index];
     for (uint16_t i = 0; i < node->n_children; i++) {
       uint16_t child_index = node->children[i];
-      node_parents[child_index] = node_index;
+      if (child_index >= GLTF_MAX_NODES) {
+        debug_log("** ERROR: too many nodes\n");
+        return 1;
+      }
+      gltf->nodes[child_index].parent = node_index;
     }
   }
 
   // calculate node matrices
   uint8_t node_matrix_done[GLTF_MAX_NODES] = { 0 };
   for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++)
-    calc_node_matrix(gltf->nodes, node_index, node_parents, node_matrix_done);
+    calc_node_matrix(gltf->nodes, node_index, node_matrix_done);
 
 #if 0
   for (uint16_t node_index = 0; node_index < gltf->n_nodes; node_index++) {

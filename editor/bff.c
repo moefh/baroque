@@ -151,7 +151,93 @@ static int write_model_meshes(struct BFF_WRITER *bff, struct MODEL *model, void 
 }
 
 /* ==========================================================================================
- * Write BMW
+ * Write BCF
+ */
+
+#define BCF_VERSION '1'
+
+static int get_bcf_tex_index(struct BFF_WRITER *bff, struct MODEL *model, int model_tex_index, uint32_t *bcf_tex_index, void *data)
+{
+  *bcf_tex_index = model_tex_index;
+  return 0;
+}
+
+static int write_bcf_header(struct BFF_WRITER *bff)
+{
+  char header[4];
+  
+  memcpy(header, "BCF", 3);
+  header[3] = BCF_VERSION;
+  if (write_data(bff, header, 4) != 0) {
+    printf("** ERROR: can't write file header\n");
+    return 1;
+  }
+  return 0;
+}
+
+int write_bcf_model_textures(struct BFF_WRITER *bff, struct MODEL *model)
+{
+  if (write_u16(bff, model->n_textures) != 0)
+    return 1;
+  
+  for (int i = 0; i < model->n_textures; i++) {
+    printf("-> writing texture %d\n", i);
+    
+    struct MODEL_TEXTURE *tex = &model->textures[i];
+    uint32_t image_length = tex->height;
+    if (write_data(bff, tex->data, image_length) != 0) {
+      printf("** ERROR: can't write texture data\n");
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int write_bcf_file(const char *bcf_filename, const char *glb_filename)
+{
+  struct MODEL model;
+  struct MODEL_SKELETON skel;
+  if (read_glb_animated_model(&model, &skel, glb_filename, MODEL_FLAGS_PACKED_IMAGES) != 0) {
+    printf("** ERROR: can't read model from '%s'\n", glb_filename);
+    return 1;
+  }
+
+  struct BFF_WRITER bff;
+  if (open_bff(&bff, bcf_filename, get_bcf_tex_index) != 0) {
+    printf("** ERROR opening file '%s'\n", bcf_filename);
+    goto err;
+  }
+
+  if (write_bcf_header(&bff) != 0)
+    goto err;
+  
+  printf("-> writing model meshes\n");
+  if (write_model_meshes(&bff, &model, NULL) != 0)
+    goto err;
+
+  if (write_bcf_model_textures(&bff, &model) != 0)
+    goto err;
+
+  // TODO: write skeleton
+  
+  free_model_skeleton(&skel);
+  free_model(&model);
+  if (close_bff(&bff) != 0) {
+    free_model(&model);
+    printf("** ERROR writing file data\n");
+    return 1;
+  }
+  return 0;
+
+ err:
+  free_model_skeleton(&skel);
+  free_model(&model);
+  close_bff(&bff);
+  return 1;
+}
+
+/* ==========================================================================================
+ * Write BMF
  */
 
 #define BMF_VERSION '1'
@@ -232,7 +318,7 @@ int write_bmf_file(const char *bmf_filename, const char *glb_filename)
 }
 
 /* ==========================================================================================
- * Write BFW
+ * Write BWF
  */
 
 #define BWF_VERSION '1'
