@@ -10,24 +10,43 @@
 
 static int convert_world(const char *in_filename, const char *out_filename)
 {
+  printf("-> reading '%s'...\n", in_filename);
   struct EDITOR_ROOM_LIST rooms;
-  if (load_map_rooms(in_filename, &rooms) != 0)
+  if (load_map_rooms(in_filename, &rooms) != 0) {
+    printf("** ERROR\n");
     return 1;
+  }
 
+  printf("-> writing '%s'...\n", out_filename);
   int ret = write_bwf_file(out_filename, &rooms);
 
+  printf("-> done\n");
   free_room_list(&rooms);
   return ret;
 }
 
 static int convert_model(const char *in_filename, const char *out_filename)
 {
-  return write_bmf_file(out_filename, in_filename);
+  printf("-> converting '%s' to '%s'...\n", in_filename, out_filename);
+  if (write_bmf_file(out_filename, in_filename) != 0) {
+    printf("** ERROR\n");
+    return 1;
+  }
+  
+  printf("-> done\n");
+  return 0;
 }
 
 static int convert_character(const char *in_filename, const char *out_filename)
 {
-  return write_bcf_file(out_filename, in_filename);
+  printf("-> converting '%s' to '%s'...\n", in_filename, out_filename);
+  if (write_bcf_file(out_filename, in_filename) != 0) {
+    printf("** ERROR\n");
+    return 1;
+  }
+  
+  printf("-> done\n");
+  return 0;
 }
 
 int main(int argc, char *argv[])

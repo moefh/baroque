@@ -13,7 +13,7 @@
 
 #define ALLOW_NO_SKIN 0
 
-#define DEBUG_MODEL_READER
+//#define DEBUG_MODEL_READER
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
 #else
@@ -384,10 +384,10 @@ static const struct MODEL_MESH_VTX_TYPE *convert_gltf_vtx_type(struct GLTF_DATA 
         continue;
       struct GLTF_ACCESSOR *accessor = &gltf->accessors[prim->attribs[vtx_type->attribs[i].attrib_num]];
       if (accessor->type != vtx_type->attribs[i].accessor_type && accessor->component_type != vtx_type->attribs[i].accessor_component_type) {
-        printf("**** bad type [%d][%d]: have (%d,%d), want (%d,%d)\n",
-               vtx_type_index, vtx_type->attribs[i].attrib_num,
-               accessor->type, accessor->component_type,
-               vtx_type->attribs[i].accessor_type, vtx_type->attribs[i].accessor_component_type);
+        debug_log("** bad vertex type [%d][%d]: have (%d,%d), want (%d,%d)\n",
+                  vtx_type_index, vtx_type->attribs[i].attrib_num,
+                  accessor->type, accessor->component_type,
+                  vtx_type->attribs[i].accessor_type, vtx_type->attribs[i].accessor_component_type);
         supported = 0;
         break;
       }
@@ -826,6 +826,7 @@ static int read_skeleton_animations(struct MODEL_READER *reader, struct MODEL_SK
   if (read_skeleton_keyframes(reader, skel, skin, node_to_bone_indices) != 0)
     return 1;
 
+#if DEBUG_MODEL_READER
   for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
     struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
     printf("== animation [%d] '%s'\n", anim_index, model_anim->name);
@@ -854,6 +855,7 @@ static int read_skeleton_animations(struct MODEL_READER *reader, struct MODEL_SK
       }
     }
   }
+#endif /* DEBUG_MODEL_READER */
   
   return 0;
 }
@@ -966,7 +968,8 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
   
   if (read_bone_inverse_matrices(reader, skel, skin) != 0)
     return 1;
-  
+
+#if DEBUG_MODEL_READER
   printf("bones:\n");
   for (int i = 0; i < skel->n_bones; i++) {
     struct MODEL_BONE *bone = &skel->bones[i];
@@ -982,6 +985,7 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
     mat4_mul(matrix, bone->pose_matrix, bone->inv_matrix);
     printf("pose * inv:\n"); mat4_dump(matrix);
   }
+#endif /* DEBUG_MODEL_READER */
 
   return 0;
 }
