@@ -11,6 +11,8 @@
 #include "gltf.h"
 #include "matrix.h"
 
+#define ALLOW_NO_SKIN 0
+
 #define DEBUG_MODEL_READER
 #ifdef DEBUG_MODEL_READER
 #define debug_log printf
@@ -628,36 +630,248 @@ struct GLTF_SKIN *find_model_skin(struct GLTF_DATA *gltf)
   uint16_t skin_index = GLTF_NONE;
   if (find_model_skin_rec(gltf, scene->nodes, scene->n_nodes, &skin_index) != 0)
     return NULL;
-  if (skin_index == GLTF_NONE) {
-    debug_log("** ERROR: skin not found\n");
+  if (skin_index == GLTF_NONE)
     return NULL;
-  }
   return &gltf->skins[skin_index];
 }
 
-static int read_skeleton(struct GLTF_DATA *gltf, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin)
+static int read_skeleton_bones(struct GLTF_DATA *gltf, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin, uint16_t *node_to_bone_indices)
 {
   skel->n_bones = skin->n_joints;
-  uint16_t node_bone_index[GLTF_MAX_NODES];
-  for (uint16_t i = 0; i < GLTF_MAX_NODES; i++)
-    node_bone_index[i] = GLTF_NONE;
-  for (uint16_t i = 0; i < skin->n_joints; i++)
-    node_bone_index[skin->joints[i]] = i;
   for (uint16_t i = 0; i < skin->n_joints; i++) {
     uint16_t joint_parent = gltf->nodes[skin->joints[i]].parent;
-    skel->bones[i].parent = node_bone_index[joint_parent];
+    if (joint_parent == GLTF_NONE)
+      skel->bones[i].parent = GLTF_NONE;
+    else
+      skel->bones[i].parent = node_to_bone_indices[joint_parent];
   }
 
-  size_t data_size = skel->n_bones * 2 * sizeof(float) * 16;
-  skel->float_data = malloc(data_size);
+  size_t float_data_size = skel->n_bones * 2 * sizeof(float) * 16;
+  skel->float_data = malloc(float_data_size);
   if (! skel->float_data) {
-    debug_log("** ERROR: out of memory for skeleton: can't allocate %u bytes\n", (unsigned) data_size);
+    debug_log("** ERROR: out of memory for skeleton bones: can't allocate %u bytes\n", (unsigned) float_data_size);
     return 1;
   }
   for (int i = 0; i < skel->n_bones; i++) {
     skel->bones[i].inv_matrix = skel->float_data + i * 2*16;
     skel->bones[i].pose_matrix = skel->float_data + i * 2*16 + 16;
   }
+  return 0;
+}
+
+static int read_skeleton_keyframes_data(struct MODEL_READER *reader, struct MODEL_BONE_KEYFRAME *keyframes, int n_components,
+                                        struct GLTF_ACCESSOR *input, struct GLTF_ACCESSOR *output)
+{
+  struct GLTF_DATA *gltf = reader->gltf;
+  
+  if (output->component_type != GLTF_ACCESSOR_COMP_TYPE_FLOAT ||
+      (n_components == 3 && output->type != GLTF_ACCESSOR_TYPE_VEC3) ||
+      (n_components == 4 && output->type != GLTF_ACCESSOR_TYPE_VEC4)) {
+    debug_log("** ERROR: sampler output has unexpected format: type=%d, comp_type=%d\n", output->type, output->component_type);
+    return 1;
+  }
+  if (input->component_type != GLTF_ACCESSOR_COMP_TYPE_FLOAT ||
+      input->type != GLTF_ACCESSOR_TYPE_SCALAR) {
+    debug_log("** ERROR: sampler input has unexpected format: type=%d, comp_type=%d\n", input->type, input->component_type);
+    return 1;
+  }
+
+  struct GLTF_BUFFER_VIEW *in_buffer_view = &gltf->buffer_views[input->buffer_view];
+  uint32_t in_buffer_byte_offset = in_buffer_view->byte_offset + input->byte_offset;
+  if (set_file_pos(reader, in_buffer_byte_offset) != 0)
+    return 1;
+  for (uint32_t i = 0; i < input->count; i++) {
+    if (read_file_data(reader, &keyframes[i].time, sizeof(float)) != 0)
+      return 1;
+    if (in_buffer_view->byte_stride && in_buffer_view->byte_stride != sizeof(float)) {
+      if (in_buffer_view->byte_stride < sizeof(float)) {
+        debug_log("** ERROR: invalid byte stride: %d (data size is %u)\n", in_buffer_view->byte_stride, (unsigned) sizeof(float));
+        return 1;
+      }
+      if (skip_file_data(reader, in_buffer_view->byte_stride - sizeof(float)) != 0)
+        return 1;
+    }
+  }
+
+  struct GLTF_BUFFER_VIEW *out_buffer_view = &gltf->buffer_views[output->buffer_view];
+  uint32_t out_buffer_byte_offset = out_buffer_view->byte_offset + output->byte_offset;
+  if (set_file_pos(reader, out_buffer_byte_offset) != 0)
+    return 1;
+  uint32_t out_component_size = (uint32_t) (n_components * sizeof(float));
+  for (uint32_t i = 0; i < output->count; i++) {
+    if (read_file_data(reader, &keyframes[i].data, out_component_size) != 0)
+      return 1;
+    if (n_components == 3)
+      keyframes[i].data[3] = 0.0;
+    if (out_buffer_view->byte_stride && out_buffer_view->byte_stride != out_component_size) {
+      if (out_buffer_view->byte_stride < out_component_size) {
+        debug_log("** ERROR: invalid byte stride: %d (data size is %u)\n", out_buffer_view->byte_stride, out_component_size);
+        return 1;
+      }
+      if (skip_file_data(reader, out_buffer_view->byte_stride - out_component_size) != 0)
+        return 1;
+    }
+  }
+  
+  return 0;
+}
+
+static int read_skeleton_keyframes(struct MODEL_READER *reader, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin, uint16_t *node_to_bone_indices)
+{
+  struct GLTF_DATA *gltf = reader->gltf;
+  struct MODEL_BONE_KEYFRAME *keyframe_data = skel->keyframe_data;
+  
+  for (uint16_t anim_index = 0; anim_index < gltf->n_animations; anim_index++) {
+    struct GLTF_ANIMATION *gltf_anim = &gltf->animations[anim_index];
+    struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
+    for (uint16_t channel_index = 0; channel_index < gltf_anim->n_channels; channel_index++) {
+      struct GLTF_ANIMATION_CHANNEL *channel = &gltf_anim->channels[channel_index];
+      struct GLTF_ANIMATION_SAMPLER *sampler = &gltf_anim->samplers[channel->sampler];
+      struct GLTF_ACCESSOR *input = &gltf->accessors[sampler->input];
+      struct GLTF_ACCESSOR *output = &gltf->accessors[sampler->output];
+      if (input->count != output->count) {
+        debug_log("** ERROR: animation %d, channel %d: sampler has inconsistent input/output (%d != %d)\n", anim_index, channel_index, input->count, output->count);
+        return 1;
+      }
+      struct MODEL_BONE_ANIMATION *anim_bone = &model_anim->bones[node_to_bone_indices[channel->target_node]];
+      switch (channel->target_path) {
+      case GLTF_ANIMATION_PATH_TRANSLATION:
+        if (! keyframe_data) {
+          anim_bone->n_trans_keyframes += input->count;
+        } else {
+          anim_bone->trans_keyframes = keyframe_data;
+          keyframe_data += input->count;
+          if (read_skeleton_keyframes_data(reader, anim_bone->trans_keyframes, 3, input, output) != 0)
+            return 1;
+        }
+        break;
+        
+      case GLTF_ANIMATION_PATH_ROTATION:
+        if (! keyframe_data) {
+          anim_bone->n_rot_keyframes += input->count;
+        } else {
+          anim_bone->rot_keyframes = keyframe_data;
+          keyframe_data += input->count;
+          if (read_skeleton_keyframes_data(reader, anim_bone->rot_keyframes, 4, input, output) != 0)
+            return 1;
+        }
+        break;
+        
+      case GLTF_ANIMATION_PATH_SCALE:
+        if (! keyframe_data) {
+          anim_bone->n_scale_keyframes += input->count;
+        } else {
+          anim_bone->scale_keyframes = keyframe_data;
+          keyframe_data += input->count;
+          if (read_skeleton_keyframes_data(reader, anim_bone->scale_keyframes, 3, input, output) != 0)
+            return 1;
+        }
+        break;
+        
+      default:
+        debug_log("** ERROR: animation %d, channel %d: unsupported animation path type: %d\n", anim_index, channel_index, channel->target_path);
+        return 1;
+      }
+    }
+  }
+
+  return 0;
+}
+
+static int read_skeleton_animations(struct MODEL_READER *reader, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin, uint16_t *node_to_bone_indices)
+{
+  struct GLTF_DATA *gltf = reader->gltf;
+  
+  skel->n_animations = gltf->n_animations;
+  size_t animation_data_size = sizeof *skel->animations * skel->n_animations;
+  skel->animations = malloc(animation_data_size);
+  if (! skel->animations) {
+    debug_log("** ERROR: out of memory for skeleton animations: can't allocate %u bytes\n", (unsigned) animation_data_size);
+    return 1;
+  }
+  for (uint16_t anim_index = 0; anim_index < gltf->n_animations; anim_index++) {
+    struct GLTF_ANIMATION *gltf_anim = &gltf->animations[anim_index];
+    struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
+    strncpy(model_anim->name, gltf_anim->name, sizeof(model_anim->name));
+    model_anim->name[sizeof(model_anim->name)-1] = '\0';
+    for (int bone_index = 0; bone_index < MODEL_MAX_BONES; bone_index++) {
+      model_anim->bones[bone_index].n_trans_keyframes = 0;
+      model_anim->bones[bone_index].n_rot_keyframes = 0;
+      model_anim->bones[bone_index].n_scale_keyframes = 0;
+    }
+  }
+
+  // first count number of keyframes
+  if (read_skeleton_keyframes(reader, skel, skin, node_to_bone_indices) != 0)
+    return 1;
+
+  // allocate keyframes
+  int n_keyframes = 0;
+  for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
+    struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
+    for (int bone_index = 0; bone_index < MODEL_MAX_BONES; bone_index++) {
+      n_keyframes += model_anim->bones[bone_index].n_trans_keyframes;
+      n_keyframes += model_anim->bones[bone_index].n_rot_keyframes;
+      n_keyframes += model_anim->bones[bone_index].n_scale_keyframes;
+    }
+  }
+  size_t keyframe_data_size = n_keyframes * sizeof(struct MODEL_BONE_KEYFRAME);
+  skel->keyframe_data = malloc(keyframe_data_size);
+  if (! skel->keyframe_data) {
+    debug_log("** ERROR: out of memory for skeleton keyframes: can't allocate %u bytes\n", (unsigned) keyframe_data_size);
+    return 1;
+  }
+
+  // actually read keyframe data
+  if (read_skeleton_keyframes(reader, skel, skin, node_to_bone_indices) != 0)
+    return 1;
+
+  for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
+    struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
+    printf("== animation [%d] '%s'\n", anim_index, model_anim->name);
+    for (int bone_index = 0; bone_index < MODEL_MAX_BONES; bone_index++) {
+      struct MODEL_BONE_ANIMATION *bone_anim = &model_anim->bones[bone_index];
+      if (bone_anim->n_trans_keyframes) {
+        printf("-> bone %d: %d trans:\n", bone_index, bone_anim->n_trans_keyframes);
+        for (int i = 0; i < bone_anim->n_trans_keyframes; i++) {
+          struct MODEL_BONE_KEYFRAME *keyframe = &bone_anim->trans_keyframes[i];
+          printf("   [%3d] time=%f; trans=(%+f, %+f, %+f)\n", i, keyframe->time, keyframe->data[0], keyframe->data[1], keyframe->data[2]);
+        }
+      }
+      if (bone_anim->n_rot_keyframes) {
+        printf("-> bone %d: %d rot keyframes:\n", bone_index, bone_anim->n_rot_keyframes);
+        for (int i = 0; i < bone_anim->n_rot_keyframes; i++) {
+          struct MODEL_BONE_KEYFRAME *keyframe = &bone_anim->rot_keyframes[i];
+          printf("   [%3d] time=%f; rot=(%+f, %+f, %+f, %+f)\n", i, keyframe->time, keyframe->data[0], keyframe->data[1], keyframe->data[2], keyframe->data[3]);
+        }
+      }
+      if (bone_anim->n_scale_keyframes) {
+        printf("-> bone %d: %d scale keyframes\n", bone_index, bone_anim->n_scale_keyframes);
+        for (int i = 0; i < bone_anim->n_scale_keyframes; i++) {
+          struct MODEL_BONE_KEYFRAME *keyframe = &bone_anim->scale_keyframes[i];
+          printf("   [%3d] time=%f; scale=(%+f, %+f, %+f)\n", i, keyframe->time, keyframe->data[0], keyframe->data[1], keyframe->data[2]);
+        }
+      }
+    }
+  }
+  
+  return 0;
+}
+
+static int read_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETON *skel, struct GLTF_SKIN *skin)
+{
+  uint16_t node_to_bone_indices[GLTF_MAX_NODES];
+  for (uint16_t i = 0; i < GLTF_MAX_NODES; i++)
+    node_to_bone_indices[i] = GLTF_NONE;
+  for (uint16_t i = 0; i < skin->n_joints; i++)
+    node_to_bone_indices[skin->joints[i]] = i;
+  
+  if (read_skeleton_bones(reader->gltf, skel, skin, node_to_bone_indices) != 0)
+    return 1;
+  
+  if (read_skeleton_animations(reader, skel, skin, node_to_bone_indices) != 0)
+    return 1;
+
   return 0;
 }
 
@@ -671,7 +885,7 @@ static int read_bone_pose_matrices(struct GLTF_DATA *gltf, struct MODEL_SKELETON
     mat4_id(skel->bones[bone_index].pose_matrix);
     while (node_index != GLTF_NONE && node_index < GLTF_MAX_NODES) {
       struct GLTF_NODE *node = &gltf->nodes[node_index];
-      //printf("bone %d transformed by node %d:\n", i, node_index); mat4_dump(node->local_matrix);
+      //printf("bone %d transformed by node %d:\n", bone_index, node_index); mat4_dump(node->local_matrix);
       mat4_mul_left(skel->bones[bone_index].pose_matrix, node->local_matrix);
       if (node_index == skin_root)
         break;
@@ -720,11 +934,31 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
   if (gltf->scene == GLTF_NONE)
     return 1;
 
-  struct GLTF_SKIN *skin = find_model_skin(gltf);
-  if (! skin)
-    return 1;
+#if ALLOW_NO_SKIN
+  struct GLTF_SKIN default_skin;
+#endif
   
-  if (read_skeleton(gltf, skel, skin) != 0)
+  struct GLTF_SKIN *skin = find_model_skin(gltf);
+  if (! skin) {
+#if ALLOW_NO_SKIN
+    // no skin, use all nodes from scene
+    skin = &default_skin;
+    skin->skeleton = GLTF_NONE;
+    skin->inverse_bind_matrices = GLTF_NONE;
+    if (gltf->n_nodes > GLTF_MAX_SKIN_JOINTS) {
+      debug_log("** ERROR: too many nodes for skin\n");
+      return 1;
+    }
+    skin->n_joints = gltf->n_nodes;
+    for (uint16_t i = 0; i < gltf->n_nodes; i++)
+      skin->joints[i] = i;
+#else
+    debug_log("** ERROR: skin not found\n");
+    return 1;
+#endif
+  }
+  
+  if (read_skeleton(reader, skel, skin) != 0)
     return 1;
   
   if (read_bone_pose_matrices(gltf, skel, skin) != 0)
@@ -748,6 +982,7 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
     mat4_mul(matrix, bone->pose_matrix, bone->inv_matrix);
     printf("pose * inv:\n"); mat4_dump(matrix);
   }
+
   return 0;
 }
 
@@ -762,6 +997,8 @@ void free_model(struct MODEL *model)
 
 void free_model_skeleton(struct MODEL_SKELETON *skel)
 {
+  free(skel->animations);
+  free(skel->keyframe_data);
   free(skel->float_data);
 }
 
@@ -775,6 +1012,8 @@ static void init_model_skeleton(struct MODEL_SKELETON *skel)
 {
   skel->n_bones = 0;
   skel->float_data = NULL;
+  skel->animations = NULL;
+  skel->keyframe_data = NULL;
 }
 
 static void init_model_reader(struct MODEL_READER *reader, struct GLTF_DATA *gltf, uint32_t flags)
@@ -848,7 +1087,7 @@ int read_glb_animated_model(struct MODEL *model, struct MODEL_SKELETON *skel, co
 
   if (read_model_skeleton(&reader, skel) != 0)
     goto err;
-  
+
   close_glb(&glb);
   return 0;
 

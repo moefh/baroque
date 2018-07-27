@@ -13,7 +13,7 @@
 #define MODEL_MAX_TEXTURES    64
 #define MODEL_MAX_MESHES      128
 #define MODEL_MAX_BONES       32
-#define MODEL_MAX_ANIMATIONS  64
+#define MODEL_MAX_ANIMATIONS  16
 
 #define MODEL_MESH_VTX_POS                  0
 #define MODEL_MESH_VTX_POS_UV1              1
@@ -68,6 +68,25 @@ struct MODEL {
   struct MODEL_TEXTURE textures[MODEL_MAX_TEXTURES];
 };
 
+struct MODEL_BONE_KEYFRAME {
+  float time;
+  float data[4];
+};
+
+struct MODEL_BONE_ANIMATION {
+  uint16_t n_trans_keyframes;
+  uint16_t n_rot_keyframes;
+  uint16_t n_scale_keyframes;
+  struct MODEL_BONE_KEYFRAME *trans_keyframes;
+  struct MODEL_BONE_KEYFRAME *rot_keyframes;
+  struct MODEL_BONE_KEYFRAME *scale_keyframes;
+};
+
+struct MODEL_ANIMATION {
+  char name[32];
+  struct MODEL_BONE_ANIMATION bones[MODEL_MAX_BONES];
+};
+
 struct MODEL_BONE {
   int parent;
   float *inv_matrix;
@@ -76,8 +95,11 @@ struct MODEL_BONE {
 
 struct MODEL_SKELETON {
   int n_bones;
+  int n_animations;
   struct MODEL_BONE bones[MODEL_MAX_BONES];
+  struct MODEL_ANIMATION *animations;
   float *float_data;
+  struct MODEL_BONE_KEYFRAME *keyframe_data;
 };
 
 struct MODEL_MESH *new_model_mesh(uint8_t vtx_type, uint32_t vtx_size, uint8_t ind_type, uint32_t ind_size, uint32_t ind_count);
