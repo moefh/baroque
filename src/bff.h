@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include "gfx.h"
+#include "skeleton.h"
 #include "file.h"
 
 #define BWF_MAX_ROOMS    1024
@@ -26,5 +27,6 @@ void close_bwf(struct BWF_READER *bwf);
 int load_bwf_room(struct BWF_READER *bwf, struct ROOM *room);
 
 int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data);
+int load_bcf(const char *filename, struct SKELETON *skel, uint32_t type, uint32_t info, void *data);
 
 #endif /* MODEL_H_FILE */

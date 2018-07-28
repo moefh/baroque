@@ -196,8 +196,9 @@ static int write_bcf_model_textures(struct BFF_WRITER *bff, struct MODEL *model)
     debug_log("-> writing texture %d\n", i);
     
     struct MODEL_TEXTURE *tex = &model->textures[i];
-    uint32_t image_length = tex->height;
-    if (write_data(bff, tex->data, image_length) != 0) {
+    uint32_t data_size = tex->height;
+    if (write_u32(bff, data_size) != 0 ||
+        write_data(bff, tex->data, data_size) != 0) {
       debug_log("** ERROR: can't write texture data\n");
       return 1;
     }
@@ -207,6 +208,8 @@ static int write_bcf_model_textures(struct BFF_WRITER *bff, struct MODEL *model)
 
 static int write_bcf_keyframes(struct BFF_WRITER *bff, struct MODEL_BONE_KEYFRAME *keyframes, int n_keyframes, int n_comp)
 {
+  if (write_u16(bff, n_keyframes) != 0)
+    return 1;
   for (int i = 0; i < n_keyframes; i++) {
     if (write_f32(bff, keyframes->time) != 0)
       return 1;
@@ -218,9 +221,23 @@ static int write_bcf_keyframes(struct BFF_WRITER *bff, struct MODEL_BONE_KEYFRAM
 
 static int write_bcf_skeleton(struct BFF_WRITER *bff, struct MODEL_SKELETON *skel)
 {
-  debug_log("-> writing %d bones: %d bytes\n", skel->n_bones, (int) (skel->n_bones * sizeof(uint16_t) + skel->n_bones * 2 * 16 * sizeof(float)));
-  if (write_u16(bff, skel->n_bones) != 0)
+  uint32_t n_keyframes = 0;
+  for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
+    struct MODEL_ANIMATION *anim = &skel->animations[anim_index];
+    for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
+      struct MODEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
+      n_keyframes += bone_anim->n_trans_keyframes;
+      n_keyframes += bone_anim->n_rot_keyframes;
+      n_keyframes += bone_anim->n_scale_keyframes;
+    }
+  }
+
+  if (write_u16(bff, skel->n_bones) != 0 ||
+      write_u16(bff, skel->n_animations) != 0 ||
+      write_u32(bff, n_keyframes) != 0)
     return 1;
+
+  debug_log("-> writing %d bones\n", skel->n_bones);
   for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
     struct MODEL_BONE *bone = &skel->bones[bone_index];
     if (write_u16(bff, bone->parent) != 0 ||
@@ -229,25 +246,7 @@ static int write_bcf_skeleton(struct BFF_WRITER *bff, struct MODEL_SKELETON *ske
       return 1;
   }
 
-  uint32_t n_keyframes = 0;
-  uint32_t n_keyframes_floats = 0;
-  for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
-    struct MODEL_ANIMATION *anim = &skel->animations[anim_index];
-    for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
-      struct MODEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
-      n_keyframes += bone_anim->n_trans_keyframes;
-      n_keyframes += bone_anim->n_rot_keyframes;
-      n_keyframes += bone_anim->n_scale_keyframes;
-      n_keyframes_floats += bone_anim->n_trans_keyframes * 4;
-      n_keyframes_floats += bone_anim->n_rot_keyframes * 5;
-      n_keyframes_floats += bone_anim->n_scale_keyframes * 4;
-    }
-  }
-
-  debug_log("-> writing %d keyframes: %d bytes\n", (int) n_keyframes, (int) (n_keyframes_floats * sizeof(float)));
-  if (write_u32(bff, n_keyframes) != 0 ||
-      write_u16(bff, skel->n_animations) != 0)
-    return 1;
+  debug_log("-> writing %d keyframes\n", (int) n_keyframes);
   for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
     struct MODEL_ANIMATION *anim = &skel->animations[anim_index];
     for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
@@ -342,8 +341,9 @@ int write_bmf_model_textures(struct BFF_WRITER *bff, struct MODEL *model)
     debug_log("-> writing texture %d\n", i);
     
     struct MODEL_TEXTURE *tex = &model->textures[i];
-    uint32_t image_length = tex->height;
-    if (write_data(bff, tex->data, image_length) != 0) {
+    uint32_t data_size = tex->height;
+    if (write_u32(bff, data_size) != 0 ||
+        write_data(bff, tex->data, data_size) != 0) {
       debug_log("** ERROR: can't write texture data\n");
       return 1;
     }
@@ -625,22 +625,23 @@ static int write_bwf_image(struct BWF_WRITER *bwf, struct IMAGE_INFO *image)
   }
   struct MODEL_TEXTURE *tex = &model.textures[image->model_tex_index];
   debug_log("-> writing image %d (%s)\n", image->index, (char*)tex->data);
-  uint32_t image_offset = tex->width;
-  uint32_t image_length = tex->height;
+  uint32_t data_offset = tex->width;
+  uint32_t data_size = tex->height;
   free_model(&model);
 
-  void *data = malloc(image_length);
+  void *data = malloc(data_size);
   if (! data)
     return 1;
 
-  if (read_file_block(filename, data, image_offset, image_length) != 0) {
+  if (read_file_block(filename, data, data_offset, data_size) != 0) {
     debug_log("** ERROR: can't read image from '%s'\n", filename);
     free(data);
     return 1;
   }
 
   image->file_offset = bwf->bff.cur_file_offset;
-  if (write_data(&bwf->bff, data, image_length) != 0) {
+  if (write_u32(&bwf->bff, data_size) != 0 ||
+      write_data(&bwf->bff, data, data_size) != 0) {
     debug_log("** ERROR: can't write image data\n");
     free(data);
     return 1;

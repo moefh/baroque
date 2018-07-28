@@ -177,6 +177,13 @@ static int load_player_model(void)
     debug("** ERROR: can't load player model from data/player.bmf\n");
     return 1;
   }
+
+  struct SKELETON skel;
+  if (load_bcf("data/test1.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
+    debug("** ERROR: can't load player model from data/test1.bcf\n");
+    return 1;
+  }
+  free_skeleton(&skel);
   return 0;
 }
 

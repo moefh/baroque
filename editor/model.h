@@ -13,7 +13,6 @@
 #define MODEL_MAX_TEXTURES    64
 #define MODEL_MAX_MESHES      128
 #define MODEL_MAX_BONES       32
-#define MODEL_MAX_ANIMATIONS  16
 
 #define MODEL_MESH_VTX_POS                  0
 #define MODEL_MESH_VTX_POS_UV1              1

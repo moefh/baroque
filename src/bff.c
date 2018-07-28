@@ -9,6 +9,7 @@
 #include "gfx.h"
 #include "asset_loader.h"
 #include "model.h"
+#include "skeleton.h"
 #include "matrix.h"
 #include "room.h"
 
@@ -41,16 +42,27 @@ static struct GFX_MESH *load_bff_mesh(struct FILE_READER *file, uint32_t type, u
 static struct GFX_TEXTURE *load_bff_texture(struct FILE_READER *file)
 {
   struct GFX_TEXTURE *gfx_tex = gfx_alloc_texture();
-  gfx_tex->use_count++; // asset loader counts as user until load is acknowleged
+  gfx_tex->use_count++; // asset loader counts as user until load is completed
 
+  uint32_t data_size = file_read_u32(file);
+  void *file_pos = file_skip_data(file, data_size);
+  
   struct ASSET_REQUEST req;
   req.type = ASSET_TYPE_REQ_TEXTURE;
   req.data.req_texture.gfx = gfx_tex;
-  req.data.req_texture.src_file_pos = file->pos;
-  req.data.req_texture.src_file_len = file->start + file->size - file->pos;
+  req.data.req_texture.src_file_pos = file_pos;
+  req.data.req_texture.src_file_len = data_size;
   send_asset_request(&req);
 
   return gfx_tex;
+}
+
+static void request_file_close(struct FILE_READER *file)
+{
+  struct ASSET_REQUEST req;
+  req.type = ASSET_TYPE_CLOSE_FILE;
+  req.data.close_file.file = *file;
+  send_asset_request(&req);
 }
 
 /* ========================================================================================
@@ -107,14 +119,6 @@ static int load_bmf_textures(struct BMF_READER *bmf)
   return 0;
 }
 
-static void request_file_close(struct BMF_READER *bmf)
-{
-  struct ASSET_REQUEST req;
-  req.type = ASSET_TYPE_CLOSE_FILE;
-  req.data.close_file.file = bmf->file;
-  send_asset_request(&req);
-}
-
 int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data)
 {
   struct BMF_READER bmf;
@@ -131,11 +135,112 @@ int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data)
   if (load_bmf_textures(&bmf) != 0)
     goto err;
   
-  request_file_close(&bmf);
+  request_file_close(&bmf.file);
   return 0;
 
  err:
-  request_file_close(&bmf);
+  request_file_close(&bmf.file);
+  return 1;
+}
+
+/* ========================================================================================
+ * BCF reader
+ */
+
+static int read_bcf_header(struct FILE_READER *file)
+{
+  char header[4];
+  file_read_data(file, header, 4);
+  if (memcmp(header, "BCF1", 4) != 0)
+    return 1;
+
+  return 0;
+}
+
+static void load_bcf_keyframes(struct FILE_READER *file, struct SKEL_BONE_KEYFRAME **p_keyframes_data,
+                               uint16_t *ret_n_keyframes, struct SKEL_BONE_KEYFRAME **ret_keyframes, int n_comp)
+{
+  uint16_t n_keyframes = file_read_u16(file);
+  struct SKEL_BONE_KEYFRAME *keyframes = *p_keyframes_data;
+  for (uint16_t i = 0; i < n_keyframes; i++) {
+    keyframes[i].time = file_read_f32(file);
+    file_read_f32_vec(file, keyframes[i].data, n_comp);
+  }
+  
+  *ret_keyframes = keyframes;
+  *ret_n_keyframes = n_keyframes;
+  (*p_keyframes_data) += n_keyframes;
+}
+
+static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
+{
+  uint16_t n_bones = file_read_u16(file);
+  uint16_t n_anim = file_read_u16(file);
+  uint32_t n_keyframes = file_read_u32(file);
+
+  if (new_skeleton(skel, n_bones, n_anim, n_keyframes) != 0)
+    return 1;
+  
+  for (uint16_t bone_index = 0; bone_index < n_bones; bone_index++) {
+    struct SKEL_BONE *bone = &skel->bones[bone_index];
+    bone->parent = file_read_u16(file);
+    file_read_f32_vec(file, bone->inv_matrix, 16);
+    file_read_f32_vec(file, bone->pose_matrix, 16);
+  }
+
+#if 1
+  console("bones:\n");
+  for (int i = 0; i < skel->n_bones; i++) {
+    struct SKEL_BONE *bone = &skel->bones[i];
+    console("-- bone [%d] --------------------\n", i);
+    console("parent: %d\n", bone->parent);
+    console("pose_matrix:\n"); mat4_dump(bone->pose_matrix);
+    console("inv_matrix:\n"); mat4_dump(bone->inv_matrix);
+
+    float matrix[16];
+    mat4_mul(matrix, bone->pose_matrix, bone->inv_matrix);
+    console("pose * inv:\n"); mat4_dump(matrix);
+  }
+#endif
+  
+  struct SKEL_BONE_KEYFRAME *keyframe_data = skel->keyframe_data;
+  for (uint16_t anim_index = 0; anim_index < n_anim; anim_index++) {
+    struct SKEL_ANIMATION *anim = &skel->animations[anim_index];
+    for (uint16_t bone_index = 0; bone_index < n_bones; bone_index++) {
+      struct SKEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
+      load_bcf_keyframes(file, &keyframe_data, &bone_anim->n_trans_keyframes, &bone_anim->trans_keyframes, 3);
+      load_bcf_keyframes(file, &keyframe_data, &bone_anim->n_rot_keyframes, &bone_anim->rot_keyframes, 4);
+      load_bcf_keyframes(file, &keyframe_data, &bone_anim->n_scale_keyframes, &bone_anim->scale_keyframes, 3);
+    }
+  }
+
+  return 0;
+}
+
+int load_bcf(const char *filename, struct SKELETON *skel, uint32_t type, uint32_t info, void *data)
+{
+  struct BMF_READER bmf;
+
+  if (file_open(&bmf.file, filename) != 0)
+    return 1;
+
+  if (read_bcf_header(&bmf.file) != 0)
+    goto err;
+
+  if (load_bmf_meshes(&bmf, type, info, data) != 0)
+    goto err;
+
+  if (load_bmf_textures(&bmf) != 0)
+    goto err;
+
+  if (load_bcf_skeleton(&bmf.file, skel) != 0)
+    goto err;
+  
+  request_file_close(&bmf.file);
+  return 0;
+
+ err:
+  request_file_close(&bmf.file);
   return 1;
 }
 
