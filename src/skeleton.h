@@ -44,5 +44,6 @@ struct SKELETON {
 void init_skeleton(struct SKELETON *skel, int n_bones, int n_animations);
 void free_skeleton(struct SKELETON *skel);
 int new_skeleton(struct SKELETON *skel, int n_bones, int n_animations, int n_keyframes);
+void get_skeleton_matrices(struct SKELETON *skel, int n_anim, float time, float *matrices);
 
 #endif /* SKELETON_H_FILE */

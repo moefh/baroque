@@ -165,11 +165,22 @@ static void load_bcf_keyframes(struct FILE_READER *file, struct SKEL_BONE_KEYFRA
   for (uint16_t i = 0; i < n_keyframes; i++) {
     keyframes[i].time = file_read_f32(file);
     file_read_f32_vec(file, keyframes[i].data, n_comp);
+    //console("read keyframe %d: time=%f, data=%f,%f,%f\n", i, keyframes[i].time, keyframes[i].data[0], keyframes[i].data[1], keyframes[i].data[2]);
   }
   
   *ret_keyframes = keyframes;
   *ret_n_keyframes = n_keyframes;
   (*p_keyframes_data) += n_keyframes;
+}
+
+static int read_anim_name(struct FILE_READER *file, struct SKEL_ANIMATION *anim)
+{
+  size_t name_len = file_read_u8(file);
+  if (name_len+1 > sizeof(anim->name))
+    return 1;
+  file_read_data(file, anim->name, name_len);
+  anim->name[name_len] = '\0';
+  return 0;
 }
 
 static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
@@ -188,7 +199,7 @@ static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
     file_read_f32_vec(file, bone->pose_matrix, 16);
   }
 
-#if 1
+#if 0
   console("bones:\n");
   for (int i = 0; i < skel->n_bones; i++) {
     struct SKEL_BONE *bone = &skel->bones[i];
@@ -206,6 +217,8 @@ static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
   struct SKEL_BONE_KEYFRAME *keyframe_data = skel->keyframe_data;
   for (uint16_t anim_index = 0; anim_index < n_anim; anim_index++) {
     struct SKEL_ANIMATION *anim = &skel->animations[anim_index];
+    if (read_anim_name(file, anim) != 0)
+      return 1;
     for (uint16_t bone_index = 0; bone_index < n_bones; bone_index++) {
       struct SKEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
       load_bcf_keyframes(file, &keyframe_data, &bone_anim->n_trans_keyframes, &bone_anim->trans_keyframes, 3);

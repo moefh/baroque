@@ -21,6 +21,7 @@ void mat4_load(float *m,
 
 void mat4_load_scale(float *m, float sx, float sy, float sz);
 void mat4_load_translation(float *m, float tx, float ty, float tz);
+void mat4_load_rot_quat(float *restrict m, const float *restrict q);
 void mat4_load_rot_x(float *m, float angle);
 void mat4_load_rot_y(float *m, float angle);
 void mat4_load_rot_z(float *m, float angle);

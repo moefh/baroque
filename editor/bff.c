@@ -73,7 +73,7 @@ static int set_file_pos(struct BFF_WRITER *bff, size_t pos)
   return 0;
 }
 
-static int write_data(struct BFF_WRITER *bff, void *data, size_t size)
+static int write_data(struct BFF_WRITER *bff, const void *data, size_t size)
 {
   if (fwrite(data, 1, size, bff->f) != size)
     return 1;
@@ -120,7 +120,7 @@ static int write_f32(struct BFF_WRITER *bff, float n)
   return write_u32(bff, pun.u);
 }
 
-static int write_f32_array(struct BFF_WRITER *bff, float *arr, int num)
+static int write_f32_array(struct BFF_WRITER *bff, const float *arr, int num)
 {
   for (int i = 0; i < num; i++)
     if (write_f32(bff, arr[i]) != 0)
@@ -128,9 +128,19 @@ static int write_f32_array(struct BFF_WRITER *bff, float *arr, int num)
   return 0;
 }
 
-static int write_mat4(struct BFF_WRITER *bff, float *mat)
+static int write_mat4(struct BFF_WRITER *bff, const float *mat)
 {
   return write_f32_array(bff, mat, 16);
+}
+
+static int write_string(struct BFF_WRITER *bff, const char *str)
+{
+  size_t len = strlen(str);
+  if (len > 255)
+    return 1;
+  if (write_u8(bff, len) != 0 || write_data(bff, str, len) != 0)
+    return 1;
+  return 0;
 }
 
 static int write_model_meshes(struct BFF_WRITER *bff, struct MODEL *model, void *data)
@@ -211,10 +221,11 @@ static int write_bcf_keyframes(struct BFF_WRITER *bff, struct MODEL_BONE_KEYFRAM
   if (write_u16(bff, n_keyframes) != 0)
     return 1;
   for (int i = 0; i < n_keyframes; i++) {
-    if (write_f32(bff, keyframes->time) != 0)
+    if (write_f32(bff, keyframes[i].time) != 0)
       return 1;
-    if (write_f32_array(bff, keyframes->data, n_comp) != 0)
+    if (write_f32_array(bff, keyframes[i].data, n_comp) != 0)
       return 1;
+    //printf("writing keyframe %d: ", i); for (int j = 0; j < n_comp; j++) printf(" %+f", keyframes[i].data[j]); printf("\n");
   }
   return 0;
 }
@@ -246,9 +257,11 @@ static int write_bcf_skeleton(struct BFF_WRITER *bff, struct MODEL_SKELETON *ske
       return 1;
   }
 
-  debug_log("-> writing %d keyframes\n", (int) n_keyframes);
+  debug_log("-> writing %d keyframes in %d animations\n", (int) n_keyframes, skel->n_animations);
   for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
     struct MODEL_ANIMATION *anim = &skel->animations[anim_index];
+    if (write_string(bff, anim->name) != 0)
+      return 1;
     for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
       struct MODEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
       if (write_bcf_keyframes(bff, bone_anim->trans_keyframes, bone_anim->n_trans_keyframes, 3) != 0)

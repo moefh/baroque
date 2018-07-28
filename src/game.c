@@ -183,6 +183,12 @@ static int load_player_model(void)
     debug("** ERROR: can't load player model from data/test1.bcf\n");
     return 1;
   }
+  static float matrices[16*SKELETON_MAX_BONES];
+  get_skeleton_matrices(&skel, 0, 0.0, matrices);
+  for (int i = 0; i < skel.n_bones; i++) {
+    console("skel matrix [%d]:\n", i);
+    mat4_dump(&matrices[16*i]);
+  }
   free_skeleton(&skel);
   return 0;
 }

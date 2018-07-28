@@ -703,6 +703,7 @@ static int read_skeleton_keyframes_data(struct MODEL_READER *reader, struct MODE
       return 1;
     if (n_components == 3)
       keyframes[i].data[3] = 0.0;
+    //if (n_components == 3) vec3_dump(keyframes[i].data); else vec4_dump(keyframes[i].data);
     if (out_buffer_view->byte_stride && out_buffer_view->byte_stride != out_component_size) {
       if (out_buffer_view->byte_stride < out_component_size) {
         debug_log("** ERROR: invalid byte stride: %d (data size is %u)\n", out_buffer_view->byte_stride, out_component_size);
@@ -754,6 +755,8 @@ static int read_skeleton_keyframes(struct MODEL_READER *reader, struct MODEL_SKE
           keyframe_data += input->count;
           if (read_skeleton_keyframes_data(reader, anim_bone->rot_keyframes, 4, input, output) != 0)
             return 1;
+          for (uint16_t i = 0; i < anim_bone->n_rot_keyframes; i++)
+            quat_normalize(anim_bone->rot_keyframes[i].data);
         }
         break;
         
