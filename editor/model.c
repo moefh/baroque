@@ -826,7 +826,7 @@ static int read_skeleton_animations(struct MODEL_READER *reader, struct MODEL_SK
   if (read_skeleton_keyframes(reader, skel, skin, node_to_bone_indices) != 0)
     return 1;
 
-#if DEBUG_MODEL_READER
+#ifdef DEBUG_MODEL_READER
   for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
     struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
     printf("== animation [%d] '%s'\n", anim_index, model_anim->name);
@@ -969,7 +969,7 @@ static int read_model_skeleton(struct MODEL_READER *reader, struct MODEL_SKELETO
   if (read_bone_inverse_matrices(reader, skel, skin) != 0)
     return 1;
 
-#if DEBUG_MODEL_READER
+#ifdef DEBUG_MODEL_READER
   printf("bones:\n");
   for (int i = 0; i < skel->n_bones; i++) {
     struct MODEL_BONE *bone = &skel->bones[i];

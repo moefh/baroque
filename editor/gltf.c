@@ -125,21 +125,21 @@ static int read_nodes_element(struct JSON_READER *reader, int index, void *data)
     return 1;
 
   if (! info.has_matrix) {
+    if (info.has_scale) {
+      float scale[16];
+      mat4_load_scale(scale, info.scale[0], info.scale[1], info.scale[2]);
+      mat4_mul_left(node->local_matrix, scale);
+    }
     if (info.has_rotation) {
       float rotation[16];
       quat_normalize(info.rotation);
       mat4_load_rot_quat(rotation, info.rotation);
-      mat4_mul_right(node->local_matrix, rotation);
+      mat4_mul_left(node->local_matrix, rotation);
     }
     if (info.has_translation) {
       float translation[16];
       mat4_load_translation(translation, info.translation[0], info.translation[1], info.translation[2]);
-      mat4_mul_right(node->local_matrix, translation);
-    }
-    if (info.has_scale) {
-      float scale[16];
-      mat4_load_scale(scale, info.scale[0], info.scale[1], info.scale[2]);
-      mat4_mul_right(node->local_matrix, scale);
+      mat4_mul_left(node->local_matrix, translation);
     }
   }
   return 0;
