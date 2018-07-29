@@ -5,6 +5,7 @@
 
 #include "camera.h"
 #include "gamepad.h"
+#include "render.h"
 
 #define KEY_MOD_SHIFT   (1<<0)
 #define KEY_MOD_CTRL    (1<<1)
@@ -55,6 +56,7 @@ struct FPS_COUNTER {
 struct CREATURE {
   float pos[3];
   float theta;
+  struct RENDER_MODEL_INSTANCE *inst;
 };
 
 struct GAME {

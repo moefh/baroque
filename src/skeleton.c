@@ -6,6 +6,13 @@
 #include "matrix.h"
 #include "debug.h"
 
+//#define DEBUG_SKELETON
+#ifdef DEBUG_SKELETON
+#define debug_log console
+#else
+#define debug_log(...)
+#endif
+
 void init_skeleton(struct SKELETON *skel, int n_bones, int n_animations)
 {
   skel->n_bones = n_bones;
@@ -54,21 +61,21 @@ static int find_keyframe(float time, struct SKEL_BONE_KEYFRAME *keyframes, int n
 {
   if (n_keyframes == 0)
     return 0;
-  console("time[first]=%f, time[last]=%f\n", keyframes[0].time, keyframes[n_keyframes-1].time);
+  debug_log("time[first]=%f, time[last]=%f\n", keyframes[0].time, keyframes[n_keyframes-1].time);
   if (time < keyframes[0].time) {
-    console("using first keyframe\n");
+    debug_log("using first keyframe\n");
     ret[0] = &keyframes[0];
     return 1;
   }
   for (int i = 1; i < n_keyframes; i++) {
     if (time < keyframes[i].time) {
-      console("using keyframes %d-%d\n", i-1, i);
+      debug_log("using keyframes %d-%d\n", i-1, i);
       ret[0] = &keyframes[i-1];
       ret[1] = &keyframes[i];
       return 2;
     }
   }
-  console("using last keyframe\n");
+  debug_log("using last keyframe\n");
   ret[0] = &keyframes[n_keyframes-1];
   return 1;
 }
@@ -136,12 +143,29 @@ static void apply_trans_keyframes(float *matrix, float time, struct SKEL_BONE_KE
   }
 }
 
-void get_skeleton_matrices(struct SKELETON *skel, int n_anim, float time, float *matrices)
+struct SKEL_ANIMATION_STATE *new_skeleton_animation_state(struct SKELETON *skel)
 {
-  struct SKEL_ANIMATION *anim = &skel->animations[n_anim];
-  for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
-    float *matrix = &matrices[bone_index*16];
-    struct SKEL_BONE *bone = &skel->bones[bone_index];
+  struct SKEL_ANIMATION_STATE *state = malloc(sizeof *state + sizeof(float) * 16 * skel->n_bones);
+  if (! state)
+    return NULL;
+
+  state->skel = skel;
+  state->anim_index = 0;
+  state->time = 0.0;
+  return state;
+}
+
+void free_skeleton_animation_state(struct SKEL_ANIMATION_STATE *state)
+{
+  free(state);
+}
+
+void update_skeleton_animation_state(struct SKEL_ANIMATION_STATE *state)
+{
+  struct SKEL_ANIMATION *anim = &state->skel->animations[state->anim_index];
+  for (int bone_index = 0; bone_index < state->skel->n_bones; bone_index++) {
+    float *matrix = &state->matrices[bone_index*16];
+    struct SKEL_BONE *bone = &state->skel->bones[bone_index];
     struct SKEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
 
     mat4_copy(matrix, bone->inv_matrix);
@@ -149,13 +173,15 @@ void get_skeleton_matrices(struct SKELETON *skel, int n_anim, float time, float 
     struct SKEL_BONE_KEYFRAME *keyframes[2];
     int n_keyframes;
 
-    n_keyframes = find_keyframe(time, bone_anim->scale_keyframes, bone_anim->n_scale_keyframes, keyframes);
-    apply_scale_keyframes(matrix, time, keyframes, n_keyframes);
+    n_keyframes = find_keyframe(state->time, bone_anim->scale_keyframes, bone_anim->n_scale_keyframes, keyframes);
+    apply_scale_keyframes(matrix, state->time, keyframes, n_keyframes);
 
-    n_keyframes = find_keyframe(time, bone_anim->rot_keyframes, bone_anim->n_rot_keyframes, keyframes);
-    apply_rot_keyframes(matrix, time, keyframes, n_keyframes);
+    n_keyframes = find_keyframe(state->time, bone_anim->rot_keyframes, bone_anim->n_rot_keyframes, keyframes);
+    apply_rot_keyframes(matrix, state->time, keyframes, n_keyframes);
     
-    n_keyframes = find_keyframe(time, bone_anim->trans_keyframes, bone_anim->n_trans_keyframes, keyframes);
-    apply_trans_keyframes(matrix, time, keyframes, n_keyframes);
+    n_keyframes = find_keyframe(state->time, bone_anim->trans_keyframes, bone_anim->n_trans_keyframes, keyframes);
+    apply_trans_keyframes(matrix, state->time, keyframes, n_keyframes);
   }
+
+  // TODO: multiply parent bone matrices
 }

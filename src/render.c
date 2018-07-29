@@ -18,6 +18,13 @@
 #include "bff.h"
 #include "room.h"
 
+struct RENDER_MODEL {
+  struct RENDER_MODEL *next;
+  int use_count;
+  int n_gfx_meshes;
+  struct GFX_MESH *gfx_meshes[MODEL_MAX_MESHES];
+};
+
 struct GFX_SHADER {
   GLuint id;
   GLint uni_tex1;
@@ -37,12 +44,101 @@ struct GFX_FONT_SHADER {
   GLint uni_char_uv;
 };
 
+static struct RENDER_MODEL *render_models_free_list;
+static struct RENDER_MODEL *render_models_used_list;
+static struct RENDER_MODEL render_models[MAX_RENDER_MODELS];
+
+static struct RENDER_MODEL_INSTANCE *render_model_instances_free_list;
+static struct RENDER_MODEL_INSTANCE *render_model_instances_used_list;
+static struct RENDER_MODEL_INSTANCE render_model_instances[MAX_RENDER_MODEL_INSTANCES];
+
 static struct GFX_SHADER shader;
 static struct GFX_FONT_SHADER font_shader;
 
 static struct GFX_MESH *font_mesh;
 static float text_scale[2];
 static float text_color[4];
+
+static void init_render_lists(void)
+{
+  for (int i = 0; i < MAX_RENDER_MODELS-1; i++)
+    render_models[i].next = &render_models[i+1];
+  render_models[MAX_RENDER_MODELS-1].next = NULL;
+  render_models_free_list = &render_models[0];
+  render_models_used_list = NULL;
+
+  for (int i = 0; i < MAX_RENDER_MODEL_INSTANCES-1; i++)
+    render_model_instances[i].next = &render_model_instances[i+1];
+  render_model_instances[MAX_RENDER_MODEL_INSTANCES-1].next = NULL;
+  render_model_instances_free_list = &render_model_instances[0];
+  render_model_instances_used_list = NULL;
+}
+
+struct RENDER_MODEL *alloc_render_model(int n_meshes, struct GFX_MESH **meshes)
+{
+  struct RENDER_MODEL *model = render_models_free_list;
+  if (model == NULL)
+    return NULL;
+  render_models_free_list = model->next;
+  model->next = render_models_used_list;
+  render_models_used_list = model;
+
+  model->n_gfx_meshes = n_meshes;
+  for (int i = 0; i < n_meshes; i++)
+    model->gfx_meshes[i] = meshes[i];
+  return model;
+}
+
+void free_render_model(struct RENDER_MODEL *model)
+{
+  // remove from used list
+  struct RENDER_MODEL **p = &render_models_used_list;
+  while (*p && *p != model)
+    p = &(*p)->next;
+  if (! *p) {
+    debug("** ERROR: trying to free unused render model\n");
+    return;
+  }
+  *p = model->next;
+  
+  // add to free list
+  model->next = render_models_free_list;
+  render_models_free_list = model;
+}
+
+struct RENDER_MODEL_INSTANCE *alloc_render_model_instance(struct RENDER_MODEL *model)
+{
+  struct RENDER_MODEL_INSTANCE *inst = render_model_instances_free_list;
+  if (inst == NULL)
+    return NULL;
+  render_model_instances_free_list = inst->next;
+  inst->next = render_model_instances_used_list;
+  render_model_instances_used_list = inst;
+
+  inst->model = model;
+  inst->anim = NULL;
+  model->use_count++;
+  return inst;
+}
+
+void free_render_model_instance(struct RENDER_MODEL_INSTANCE *inst)
+{
+  inst->model->use_count--;
+  
+  // remove from used list
+  struct RENDER_MODEL_INSTANCE **p = &render_model_instances_used_list;
+  while (*p && *p != inst)
+    p = &(*p)->next;
+  if (! *p) {
+    debug("** ERROR: trying to free unused render model\n");
+    return;
+  }
+  *p = inst->next;
+  
+  // add to free list
+  inst->next = render_model_instances_free_list;
+  render_model_instances_free_list = inst;
+}
 
 static int load_shader(void)
 {
@@ -87,6 +183,7 @@ static int load_font(void)
 int render_setup(int width, int height)
 {
   init_gfx();
+  init_render_lists();
   
   if (load_shader() != 0)
     return 1;
@@ -117,41 +214,10 @@ void render_set_viewport(int width, int height)
   text_scale[1] = text_base_size * width / height;
 }
 
-static void get_creature_model_matrix(float *restrict mat_model, float *restrict mesh_matrix, struct CREATURE *creature)
-{
-  float rot[16];
-  mat4_load_rot_y(rot, creature->theta);
-  mat4_mul(mat_model, mesh_matrix, rot);
-  
-  mat_model[ 3] += creature->pos[0];
-  mat_model[ 7] += creature->pos[1];
-  mat_model[11] += creature->pos[2];
-}
-
-static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view)
+static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view, float *mat_model)
 {
   if (mesh->texture && (mesh->texture->flags & GFX_TEX_FLAG_LOADED) == 0)
     return;
-  
-  float mat_model[16];
-  switch (mesh->type) {
-  case GFX_MESH_TYPE_ROOM:
-    {
-      mat4_copy(mat_model, mesh->matrix);
-      struct ROOM *room = mesh->data;
-      mat_model[ 3] += room->pos[0];
-      mat_model[ 7] += room->pos[1];
-      mat_model[11] += room->pos[2];
-    }
-    break;
-
-  case GFX_MESH_TYPE_CREATURE:
-    get_creature_model_matrix(mat_model, mesh->matrix, &game.creatures[mesh->info]);
-    break;
-    
-  default:
-    return;
-  }
   
   float mat_model_view_projection[16];
   mat4_mul(mat_model_view_projection, mat_view_projection, mat_model);
@@ -173,6 +239,34 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   }
   GL_CHECK(glBindVertexArray(mesh->vtx_array_obj));
   GL_CHECK(glDrawElements(GL_TRIANGLES, mesh->index_count, mesh->index_type, 0));
+}
+
+static void render_room_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view)
+{
+  struct ROOM *room = mesh->data;
+  float mat_model[16];
+  mat4_copy(mat_model, mesh->matrix);
+  mat_model[ 3] += room->pos[0];
+  mat_model[ 7] += room->pos[1];
+  mat_model[11] += room->pos[2];
+
+  render_mesh(mesh, mat_view_projection, mat_view, mat_model);
+}
+
+static void render_model_instance(struct RENDER_MODEL_INSTANCE *inst, float *mat_view_projection, float *mat_view)
+{
+  if (inst->anim) {
+    // TODO: load animation state to uniforms
+  }
+  
+  struct RENDER_MODEL *model = inst->model;
+  for (int i = 0; i < model->n_gfx_meshes; i++) {
+    struct GFX_MESH *gfx_mesh = model->gfx_meshes[i];
+    float mat_model[16];
+
+    mat4_mul(mat_model, inst->matrix, gfx_mesh->matrix);
+    render_mesh(gfx_mesh, mat_view_projection, mat_view, mat_model);
+  }
 }
 
 static void render_text(float x, float y, float size, const char *text, size_t len)
@@ -260,8 +354,11 @@ void render_screen(void)
   GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
   GL_CHECK(glUniform3fv(shader.uni_camera_pos, 1, camera_pos));
   for (int i = 0; i < NUM_GFX_MESHES; i++) {
-    if (gfx_meshes[i].use_count != 0)
-      render_mesh(&gfx_meshes[i], mat_view_projection, mat_view);
+    if (gfx_meshes[i].use_count != 0 && gfx_meshes[i].type == GFX_MESH_TYPE_ROOM)
+      render_room_mesh(&gfx_meshes[i], mat_view_projection, mat_view);
+  }
+  for (struct RENDER_MODEL_INSTANCE *inst = render_model_instances_used_list; inst != NULL; inst = inst->next) {
+    render_model_instance(inst, mat_view_projection, mat_view);
   }
 
   // text

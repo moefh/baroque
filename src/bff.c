@@ -72,8 +72,7 @@ static void request_file_close(struct FILE_READER *file)
 struct BMF_READER {
   struct FILE_READER file;
   
-  size_t n_meshes;
-  struct GFX_MESH *mesh[MODEL_MAX_MESHES];
+  struct BFF_MODEL_INFO *info;
   uint32_t mesh_texture_index[MODEL_MAX_MESHES];
 };
 
@@ -93,11 +92,11 @@ static int load_bmf_meshes(struct BMF_READER *bmf, uint32_t type, uint32_t info,
   if (n_meshes > MODEL_MAX_MESHES)
     return 1;
 
-  bmf->n_meshes = n_meshes;
+  bmf->info->n_gfx_meshes = n_meshes;
   for (uint16_t i = 0; i < n_meshes; i++) {
     uint32_t tex0_index, tex1_index;
-    bmf->mesh[i] = load_bff_mesh(&bmf->file, type, info, data, &tex0_index, &tex1_index);
-    if (! bmf->mesh[i])
+    bmf->info->gfx_meshes[i] = load_bff_mesh(&bmf->file, type, info, data, &tex0_index, &tex1_index);
+    if (! bmf->info->gfx_meshes[i])
       return 1;
     bmf->mesh_texture_index[i] = tex0_index;
   }
@@ -111,17 +110,18 @@ static int load_bmf_textures(struct BMF_READER *bmf)
     struct GFX_TEXTURE *texture = load_bff_texture(&bmf->file);
     if (! texture)
       return 1;
-    for (size_t mesh = 0; mesh < bmf->n_meshes; mesh++) {
+    for (int mesh = 0; mesh < bmf->info->n_gfx_meshes; mesh++) {
       if (bmf->mesh_texture_index[mesh] == i)
-        bmf->mesh[mesh]->texture = texture;
+        bmf->info->gfx_meshes[mesh]->texture = texture;
     }
   }
   return 0;
 }
 
-int load_bmf(const char *filename, uint32_t type, uint32_t info, void *data)
+int load_bmf(struct BFF_MODEL_INFO *bff_info, const char *filename, uint32_t type, uint32_t info, void *data)
 {
   struct BMF_READER bmf;
+  bmf.info = bff_info;
 
   if (file_open(&bmf.file, filename) != 0)
     return 1;
@@ -230,9 +230,10 @@ static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
   return 0;
 }
 
-int load_bcf(const char *filename, struct SKELETON *skel, uint32_t type, uint32_t info, void *data)
+int load_bcf(struct BFF_MODEL_INFO *bff_info, const char *filename, struct SKELETON *skel, uint32_t type, uint32_t info, void *data)
 {
   struct BMF_READER bmf;
+  bmf.info = bff_info;
 
   if (file_open(&bmf.file, filename) != 0)
     return 1;

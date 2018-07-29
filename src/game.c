@@ -171,25 +171,78 @@ static void check_room_change(void)
     set_current_room(closest_room->index);
 }
 
-static int load_player_model(void)
+static int test_load_animated_model(void)
 {
-  if (load_bmf("data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
-    debug("** ERROR: can't load player model from data/player.bmf\n");
-    return 1;
-  }
-
-  struct SKELETON skel;
-  if (load_bcf("data/test1.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
+  static struct SKELETON skel;
+  
+  struct BFF_MODEL_INFO test;
+  if (load_bcf(&test, "data/test1.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
     debug("** ERROR: can't load player model from data/test1.bcf\n");
     return 1;
   }
-  static float matrices[16*SKELETON_MAX_BONES];
-  get_skeleton_matrices(&skel, 0, 0.0, matrices);
+  struct RENDER_MODEL *model = alloc_render_model(test.n_gfx_meshes, test.gfx_meshes);
+  if (! model) {
+    debug("** ERROR: can't allocate render model\n");
+    return 1;
+  }
+
+  struct RENDER_MODEL_INSTANCE *inst = alloc_render_model_instance(model);
+  if (! inst) {
+    debug("** ERROR: can't allocate render model instance\n");
+    return 1;
+  }
+  inst->anim = new_skeleton_animation_state(&skel);
+  if (! inst->anim) {
+    debug("** ERROR: can't allocate animation state\n");
+    return 1;
+  }
+  mat4_id(inst->matrix);
+  game.creatures[1].inst = inst;
+
+#if 1
+  inst->anim->time = 0.8;
+  inst->anim->anim_index = 1;
+  update_skeleton_animation_state(inst->anim);
   for (int i = 0; i < skel.n_bones; i++) {
     console("skel matrix [%d]:\n", i);
-    mat4_dump(&matrices[16*i]);
+    mat4_dump(&inst->anim->matrices[16*i]);
   }
-  free_skeleton(&skel);
+#endif
+
+  return 0;
+}
+
+static int test_load_static_model(void)
+{
+  struct BFF_MODEL_INFO test;
+  if (load_bmf(&test, "data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
+    debug("** ERROR: can't load player model from data/player.bmf\n");
+    return 1;
+  }
+  struct RENDER_MODEL *model = alloc_render_model(test.n_gfx_meshes, test.gfx_meshes);
+  if (! model) {
+    debug("** ERROR: can't allocate render model\n");
+    return 1;
+  }
+  struct RENDER_MODEL_INSTANCE *inst = alloc_render_model_instance(model);
+  if (! inst) {
+    debug("** ERROR: can't allocate render model instance\n");
+    return 1;
+  }
+
+  mat4_id(inst->matrix);
+  game.creatures[0].inst = inst;
+  return 0;
+}
+
+static int load_player_model(void)
+{
+  if (test_load_static_model() != 0)
+    return 1;
+  
+  if (test_load_animated_model() != 0)
+    return 1;
+  
   return 0;
 }
 
@@ -330,12 +383,33 @@ static void handle_loaded_assets(void)
   }
 }
 
+static void update_player_creature_matrix(void)
+{
+  struct CREATURE *player = &game.creatures[0];
+  
+  mat4_load_rot_y(player->inst->matrix, player->theta);
+  player->inst->matrix[ 3] += player->pos[0];
+  player->inst->matrix[ 7] += player->pos[1];
+  player->inst->matrix[11] += player->pos[2];
+}
+
+static void update_creatures(void)
+{
+  update_player_creature_matrix();
+
+  for (int i = 0; i < MAX_CREATURES; i++) {
+    if (game.creatures[i].inst && game.creatures[i].inst->anim)
+      update_skeleton_animation_state(game.creatures[i].inst->anim);
+  }
+}
+
 int process_game_step(void)
 {
   handle_loaded_assets();
   handle_input();
 
   check_room_change();
+  update_creatures();
   
   vec3_load(game.camera.center,
             game.creatures[0].pos[0],

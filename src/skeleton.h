@@ -44,6 +44,16 @@ struct SKELETON {
 void init_skeleton(struct SKELETON *skel, int n_bones, int n_animations);
 void free_skeleton(struct SKELETON *skel);
 int new_skeleton(struct SKELETON *skel, int n_bones, int n_animations, int n_keyframes);
-void get_skeleton_matrices(struct SKELETON *skel, int n_anim, float time, float *matrices);
+
+struct SKEL_ANIMATION_STATE {
+  struct SKELETON *skel;
+  int anim_index;
+  float time;
+  float matrices[];
+};
+
+struct SKEL_ANIMATION_STATE *new_skeleton_animation_state(struct SKELETON *skel);
+void free_skeleton_animation_state(struct SKEL_ANIMATION_STATE *state);
+void update_skeleton_animation_state(struct SKEL_ANIMATION_STATE *state);
 
 #endif /* SKELETON_H_FILE */
