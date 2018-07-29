@@ -35,6 +35,11 @@ struct GFX_SHADER {
   GLint uni_mat_model;
 };
 
+struct GFX_ANIM_SHADER {
+  struct GFX_SHADER base;
+  GLint uni_mat_bones;
+};
+
 struct GFX_FONT_SHADER {
   GLuint id;
   GLint uni_tex1;
@@ -53,6 +58,7 @@ static struct RENDER_MODEL_INSTANCE *render_model_instances_used_list;
 static struct RENDER_MODEL_INSTANCE render_model_instances[MAX_RENDER_MODEL_INSTANCES];
 
 static struct GFX_SHADER shader;
+static struct GFX_ANIM_SHADER anim_shader;
 static struct GFX_FONT_SHADER font_shader;
 
 static struct GFX_MESH *font_mesh;
@@ -152,6 +158,17 @@ static int load_shader(void)
   get_shader_uniform_id(shader.id, &shader.uni_mat_model, "mat_model");
   get_shader_uniform_id(shader.id, &shader.uni_mat_normal, "mat_normal");
 
+  anim_shader.base.id = load_program_shader("data/model_anim_vert.glsl", "data/model_frag.glsl");
+  if (anim_shader.base.id == 0)
+    return 1;
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.base.uni_tex1, "tex1");
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.base.uni_light_pos, "light_pos");
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.base.uni_camera_pos, "camera_pos");
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.base.uni_mat_model_view_projection, "mat_model_view_projection");
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.base.uni_mat_model, "mat_model");
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.base.uni_mat_normal, "mat_normal");
+  get_shader_uniform_id(anim_shader.base.id, &anim_shader.uni_mat_bones, "mat_bones");
+  
   font_shader.id = load_program_shader("data/font_vert.glsl", "data/font_frag.glsl");
   if (font_shader.id == 0)
     return 1;
@@ -214,7 +231,7 @@ void render_set_viewport(int width, int height)
   text_scale[1] = text_base_size * width / height;
 }
 
-static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view, float *mat_model)
+static void render_mesh(struct GFX_SHADER *shader, struct GFX_MESH *mesh, float *mat_view_projection, float *mat_view, float *mat_model)
 {
   if (mesh->texture && (mesh->texture->flags & GFX_TEX_FLAG_LOADED) == 0)
     return;
@@ -226,12 +243,12 @@ static void render_mesh(struct GFX_MESH *mesh, float *mat_view_projection, float
   mat4_inverse(mat_inv, mat_model);
   mat4_transpose(mat_normal, mat_inv);
 
-  if (shader.uni_mat_model_view_projection >= 0)
-    GL_CHECK(glUniformMatrix4fv(shader.uni_mat_model_view_projection, 1, GL_TRUE, mat_model_view_projection));
-  if (shader.uni_mat_normal >= 0)
-    GL_CHECK(glUniformMatrix4fv(shader.uni_mat_normal, 1, GL_TRUE, mat_normal));
-  if (shader.uni_mat_model >= 0)
-    GL_CHECK(glUniformMatrix4fv(shader.uni_mat_model, 1, GL_TRUE, mat_model));
+  if (shader->uni_mat_model_view_projection >= 0)
+    GL_CHECK(glUniformMatrix4fv(shader->uni_mat_model_view_projection, 1, GL_TRUE, mat_model_view_projection));
+  if (shader->uni_mat_normal >= 0)
+    GL_CHECK(glUniformMatrix4fv(shader->uni_mat_normal, 1, GL_TRUE, mat_normal));
+  if (shader->uni_mat_model >= 0)
+    GL_CHECK(glUniformMatrix4fv(shader->uni_mat_model, 1, GL_TRUE, mat_model));
   
   if (mesh->texture) {
     GL_CHECK(glActiveTexture(GL_TEXTURE0));
@@ -250,13 +267,30 @@ static void render_room_mesh(struct GFX_MESH *mesh, float *mat_view_projection, 
   mat_model[ 7] += room->pos[1];
   mat_model[11] += room->pos[2];
 
-  render_mesh(mesh, mat_view_projection, mat_view, mat_model);
+  render_mesh(&shader, mesh, mat_view_projection, mat_view, mat_model);
 }
 
 static void render_model_instance(struct RENDER_MODEL_INSTANCE *inst, float *mat_view_projection, float *mat_view)
 {
+  struct GFX_SHADER *model_shader;
   if (inst->anim) {
-    // TODO: load animation state to uniforms
+    model_shader = &anim_shader.base;
+#if 0
+    console("%d bones:\n", inst->anim->skel->n_bones);
+    for (int i = 0; i < inst->anim->skel->n_bones; i++) {
+      console("bone [%d]\n", i);
+      mat4_dump(&inst->anim->matrices[16*i]);
+    }
+    for (int i = 0; i < inst->model->n_gfx_meshes; i++) {
+      console("mesh[%d] matrix:\n", i);
+      mat4_dump(inst->model->gfx_meshes[i]->matrix);
+    }
+    console("inst matrix:\n");
+    mat4_dump(inst->matrix);
+#endif
+    GL_CHECK(glUniformMatrix4fv(anim_shader.uni_mat_bones, inst->anim->skel->n_bones, GL_TRUE, inst->anim->matrices));
+  } else {
+    model_shader = &shader;
   }
   
   struct RENDER_MODEL *model = inst->model;
@@ -264,8 +298,11 @@ static void render_model_instance(struct RENDER_MODEL_INSTANCE *inst, float *mat
     struct GFX_MESH *gfx_mesh = model->gfx_meshes[i];
     float mat_model[16];
 
-    mat4_mul(mat_model, inst->matrix, gfx_mesh->matrix);
-    render_mesh(gfx_mesh, mat_view_projection, mat_view, mat_model);
+    if (inst->anim)
+      mat4_copy(mat_model, inst->matrix);
+    else
+      mat4_mul(mat_model, inst->matrix, gfx_mesh->matrix);
+    render_mesh(model_shader, gfx_mesh, mat_view_projection, mat_view, mat_model);
   }
 }
 
@@ -349,6 +386,7 @@ void render_screen(void)
   mat4_mul(mat_view_projection, mat_projection, mat_view);
 
   glEnable(GL_DEPTH_TEST);
+
   GL_CHECK(glUseProgram(shader.id));
   GL_CHECK(glUniform1i(shader.uni_tex1, 0));
   GL_CHECK(glUniform3fv(shader.uni_light_pos, 1, light_pos));
@@ -358,9 +396,19 @@ void render_screen(void)
       render_room_mesh(&gfx_meshes[i], mat_view_projection, mat_view);
   }
   for (struct RENDER_MODEL_INSTANCE *inst = render_model_instances_used_list; inst != NULL; inst = inst->next) {
-    render_model_instance(inst, mat_view_projection, mat_view);
+    if (! inst->anim)
+      render_model_instance(inst, mat_view_projection, mat_view);
   }
 
+  GL_CHECK(glUseProgram(anim_shader.base.id));
+  GL_CHECK(glUniform1i(anim_shader.base.uni_tex1, 0));
+  GL_CHECK(glUniform3fv(anim_shader.base.uni_light_pos, 1, light_pos));
+  GL_CHECK(glUniform3fv(anim_shader.base.uni_camera_pos, 1, camera_pos));
+  for (struct RENDER_MODEL_INSTANCE *inst = render_model_instances_used_list; inst != NULL; inst = inst->next) {
+    if (inst->anim)
+      render_model_instance(inst, mat_view_projection, mat_view);
+  }
+  
   // text
   glDisable(GL_DEPTH_TEST);
   GL_CHECK(glUseProgram(font_shader.id));

@@ -177,6 +177,7 @@ static int test_load_animated_model(void)
   
   struct BFF_MODEL_INFO test;
   if (load_bcf(&test, "data/test1.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
+    //if (load_bcf(&test, "data/Monster.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
     debug("** ERROR: can't load player model from data/test1.bcf\n");
     return 1;
   }
@@ -199,9 +200,16 @@ static int test_load_animated_model(void)
   mat4_id(inst->matrix);
   game.creatures[1].inst = inst;
 
-#if 1
+#if 0
+  mat4_load_scale(inst->matrix, 0.002, 0.002, 0.002);
+  float fix[4];
+  mat4_load_rot_x(fix, -M_PI/2); mat4_mul_left(inst->matrix, fix);
+  mat4_load_translation(fix, 0, 1.05, 0); mat4_mul_left(inst->matrix, fix);
+#endif
+  
+#if 0
   inst->anim->time = 0.8;
-  inst->anim->anim_index = 1;
+  inst->anim->anim_index = 0;
   update_skeleton_animation_state(inst->anim);
   for (int i = 0; i < skel.n_bones; i++) {
     console("skel matrix [%d]:\n", i);
@@ -395,7 +403,16 @@ static void update_player_creature_matrix(void)
 
 static void update_creatures(void)
 {
+  static float time = 0.0;
+
   update_player_creature_matrix();
+
+  struct CREATURE *box = &game.creatures[1];
+  time += 0.01;
+  while (time > 1.6)
+    time -= 1.6;
+  box->inst->anim->time = time;
+  box->inst->anim->anim_index = 0;
 
   for (int i = 0; i < MAX_CREATURES; i++) {
     if (game.creatures[i].inst && game.creatures[i].inst->anim)

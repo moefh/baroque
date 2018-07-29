@@ -194,7 +194,8 @@ static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
   
   for (uint16_t bone_index = 0; bone_index < n_bones; bone_index++) {
     struct SKEL_BONE *bone = &skel->bones[bone_index];
-    bone->parent = file_read_u16(file);
+    uint16_t parent = file_read_u16(file);
+    bone->parent = (parent == 0xffff) ? -1 : parent;
     file_read_f32_vec(file, bone->inv_matrix, 16);
     file_read_f32_vec(file, bone->pose_matrix, 16);
   }

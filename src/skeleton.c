@@ -165,10 +165,9 @@ void update_skeleton_animation_state(struct SKEL_ANIMATION_STATE *state)
   struct SKEL_ANIMATION *anim = &state->skel->animations[state->anim_index];
   for (int bone_index = 0; bone_index < state->skel->n_bones; bone_index++) {
     float *matrix = &state->matrices[bone_index*16];
-    struct SKEL_BONE *bone = &state->skel->bones[bone_index];
     struct SKEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
 
-    mat4_copy(matrix, bone->inv_matrix);
+    mat4_id(matrix);
 
     struct SKEL_BONE_KEYFRAME *keyframes[2];
     int n_keyframes;
@@ -183,5 +182,18 @@ void update_skeleton_animation_state(struct SKEL_ANIMATION_STATE *state)
     apply_trans_keyframes(matrix, state->time, keyframes, n_keyframes);
   }
 
-  // TODO: multiply parent bone matrices
+  for (int bone_index = 0; bone_index < state->skel->n_bones; bone_index++) {
+    struct SKEL_BONE *bone = &state->skel->bones[bone_index];
+    if (bone->parent >= 0) {
+      float *matrix = &state->matrices[bone_index*16];
+      float *parent_matrix = &state->matrices[bone->parent*16];
+      mat4_mul_left(matrix, parent_matrix);
+    }
+  }
+
+  for (int bone_index = 0; bone_index < state->skel->n_bones; bone_index++) {
+    float *matrix = &state->matrices[bone_index*16];
+    struct SKEL_BONE *bone = &state->skel->bones[bone_index];
+    mat4_mul_right(matrix, bone->inv_matrix);
+  }
 }

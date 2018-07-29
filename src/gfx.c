@@ -237,13 +237,11 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
 
   case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL1:
-#define USHORT GL_UNSIGNED_SHORT
-    GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(0))));
-    GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3))));
-    GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3))));
-    GL_CHECK(glVertexAttribPointer(3, 4, USHORT,   GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3+2))));
-    GL_CHECK(glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3+2)+sizeof(uint16_t)*(4))));
-#undef USHORT
+    GL_CHECK(glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(0))));
+    GL_CHECK(glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3))));
+    GL_CHECK(glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3))));
+    GL_CHECK(glVertexAttribIPointer(3, 4, GL_UNSIGNED_SHORT,  sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3+2))));
+    GL_CHECK(glVertexAttribPointer( 4, 4, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4) + sizeof(uint16_t)*4, (void *) (sizeof(float)*(3+3+2)+sizeof(uint16_t)*(4))));
     GL_CHECK(glEnableVertexAttribArray(0));
     GL_CHECK(glEnableVertexAttribArray(1));
     GL_CHECK(glEnableVertexAttribArray(2));
@@ -252,15 +250,13 @@ struct GFX_MESH *gfx_upload_model_mesh(struct MODEL_MESH *mesh, uint32_t type, u
     break;
     
   case MODEL_MESH_VTX_POS_NORMAL_UV1_SKEL2:
-#define USHORT GL_UNSIGNED_SHORT
-    GL_CHECK(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(0))));
-    GL_CHECK(glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3))));
-    GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3))));
-    GL_CHECK(glVertexAttribPointer(3, 4, USHORT,   GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2))));
-    GL_CHECK(glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2)+sizeof(uint16_t)*(4))));
-    GL_CHECK(glVertexAttribPointer(5, 4, USHORT,   GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2+4)+sizeof(uint16_t)*(4))));
-    GL_CHECK(glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2+4)+sizeof(uint16_t)*(4+4))));
-#undef USHORT
+    GL_CHECK(glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(0))));
+    GL_CHECK(glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3))));
+    GL_CHECK(glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3))));
+    GL_CHECK(glVertexAttribIPointer(3, 4, GL_UNSIGNED_SHORT,  sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2))));
+    GL_CHECK(glVertexAttribPointer( 4, 4, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2)+sizeof(uint16_t)*(4))));
+    GL_CHECK(glVertexAttribIPointer(5, 4, GL_UNSIGNED_SHORT,  sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2+4)+sizeof(uint16_t)*(4))));
+    GL_CHECK(glVertexAttribPointer( 6, 4, GL_FLOAT, GL_FALSE, sizeof(float)*(3+3+2+4+4) + sizeof(uint16_t)*(4+4), (void *) (sizeof(float)*(3+3+2+4)+sizeof(uint16_t)*(4+4))));
     GL_CHECK(glEnableVertexAttribArray(0));
     GL_CHECK(glEnableVertexAttribArray(1));
     GL_CHECK(glEnableVertexAttribArray(2));
