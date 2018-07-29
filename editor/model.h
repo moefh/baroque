@@ -83,6 +83,10 @@ struct MODEL_BONE_ANIMATION {
 
 struct MODEL_ANIMATION {
   char name[32];
+  float start_time;
+  float end_time;
+  float loop_start_time;
+  float loop_end_time;
   struct MODEL_BONE_ANIMATION bones[MODEL_MAX_BONES];
 };
 

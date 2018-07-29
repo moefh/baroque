@@ -7,6 +7,7 @@
 #include "bff.h"
 #include "debug.h"
 #include "gfx.h"
+#include "render.h"
 #include "asset_loader.h"
 #include "model.h"
 #include "skeleton.h"
@@ -220,6 +221,10 @@ static int load_bcf_skeleton(struct FILE_READER *file, struct SKELETON *skel)
     struct SKEL_ANIMATION *anim = &skel->animations[anim_index];
     if (read_anim_name(file, anim) != 0)
       return 1;
+    anim->start_time = file_read_f32(file);
+    anim->end_time = file_read_f32(file);
+    anim->loop_start_time = file_read_f32(file);
+    anim->loop_end_time = file_read_f32(file);
     for (uint16_t bone_index = 0; bone_index < n_bones; bone_index++) {
       struct SKEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
       load_bcf_keyframes(file, &keyframe_data, &bone_anim->n_trans_keyframes, &bone_anim->trans_keyframes, 3);

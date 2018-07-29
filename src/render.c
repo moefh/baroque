@@ -16,11 +16,13 @@
 #include "game.h"
 #include "gfx.h"
 #include "bff.h"
+#include "skeleton.h"
 #include "room.h"
 
 struct RENDER_MODEL {
   struct RENDER_MODEL *next;
   int use_count;
+  struct SKELETON skel;
   int n_gfx_meshes;
   struct GFX_MESH *gfx_meshes[MODEL_MAX_MESHES];
 };
@@ -80,7 +82,7 @@ static void init_render_lists(void)
   render_model_instances_used_list = NULL;
 }
 
-struct RENDER_MODEL *alloc_render_model(int n_meshes, struct GFX_MESH **meshes)
+struct RENDER_MODEL *alloc_render_model(void)
 {
   struct RENDER_MODEL *model = render_models_free_list;
   if (model == NULL)
@@ -89,14 +91,27 @@ struct RENDER_MODEL *alloc_render_model(int n_meshes, struct GFX_MESH **meshes)
   model->next = render_models_used_list;
   render_models_used_list = model;
 
+  model->n_gfx_meshes = 0;
+  init_skeleton(&model->skel, 0, 0);
+  return model;
+}
+
+void set_render_model_meshes(struct RENDER_MODEL *model, int n_meshes, struct GFX_MESH **meshes)
+{
   model->n_gfx_meshes = n_meshes;
   for (int i = 0; i < n_meshes; i++)
     model->gfx_meshes[i] = meshes[i];
-  return model;
+}
+
+struct SKELETON *get_render_model_skeleton(struct RENDER_MODEL *model)
+{
+  return &model->skel;
 }
 
 void free_render_model(struct RENDER_MODEL *model)
 {
+  free_skeleton(&model->skel);
+  
   // remove from used list
   struct RENDER_MODEL **p = &render_models_used_list;
   while (*p && *p != model)

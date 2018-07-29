@@ -262,6 +262,11 @@ static int write_bcf_skeleton(struct BFF_WRITER *bff, struct MODEL_SKELETON *ske
     struct MODEL_ANIMATION *anim = &skel->animations[anim_index];
     if (write_string(bff, anim->name) != 0)
       return 1;
+    if (write_f32(bff, anim->start_time) != 0 ||
+        write_f32(bff, anim->end_time) != 0 ||
+        write_f32(bff, anim->loop_start_time) != 0 ||
+        write_f32(bff, anim->loop_end_time) != 0)
+      return 1;
     for (int bone_index = 0; bone_index < skel->n_bones; bone_index++) {
       struct MODEL_BONE_ANIMATION *bone_anim = &anim->bones[bone_index];
       if (write_bcf_keyframes(bff, bone_anim->trans_keyframes, bone_anim->n_trans_keyframes, 3) != 0)

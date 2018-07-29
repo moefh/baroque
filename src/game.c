@@ -171,41 +171,34 @@ static void check_room_change(void)
     set_current_room(closest_room->index);
 }
 
-static int test_load_animated_model(void)
+static struct RENDER_MODEL_INSTANCE *load_animated_model(const char *filename)
 {
-  static struct SKELETON skel;
-  
-  struct BFF_MODEL_INFO test;
-  if (load_bcf(&test, "data/test1.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
-    //if (load_bcf(&test, "data/Monster.bcf", &skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
-    debug("** ERROR: can't load player model from data/test1.bcf\n");
-    return 1;
-  }
-  struct RENDER_MODEL *model = alloc_render_model(test.n_gfx_meshes, test.gfx_meshes);
+  struct RENDER_MODEL *model = alloc_render_model();
   if (! model) {
     debug("** ERROR: can't allocate render model\n");
-    return 1;
+    return NULL;
   }
+  struct SKELETON *skel = get_render_model_skeleton(model);
+  struct BFF_MODEL_INFO info;
+  if (load_bcf(&info, filename, skel, GFX_MESH_TYPE_CREATURE, 1, NULL) != 0) {
+    debug("** ERROR: can't load player model from '%s'\n", filename);
+    free_render_model(model);
+    return NULL;
+  }
+  set_render_model_meshes(model, info.n_gfx_meshes, info.gfx_meshes);
 
   struct RENDER_MODEL_INSTANCE *inst = alloc_render_model_instance(model);
   if (! inst) {
     debug("** ERROR: can't allocate render model instance\n");
-    return 1;
+    return NULL;
   }
-  inst->anim = new_skeleton_animation_state(&skel);
+  inst->anim = new_skeleton_animation_state(skel);
   if (! inst->anim) {
     debug("** ERROR: can't allocate animation state\n");
-    return 1;
+    free_render_model(model);
+    return NULL;
   }
   mat4_id(inst->matrix);
-  game.creatures[1].inst = inst;
-
-#if 0
-  mat4_load_scale(inst->matrix, 0.002, 0.002, 0.002);
-  float fix[4];
-  mat4_load_rot_x(fix, -M_PI/2); mat4_mul_left(inst->matrix, fix);
-  mat4_load_translation(fix, 0, 1.05, 0); mat4_mul_left(inst->matrix, fix);
-#endif
   
 #if 0
   inst->anim->time = 0.8;
@@ -217,39 +210,55 @@ static int test_load_animated_model(void)
   }
 #endif
 
-  return 0;
+  return inst;
 }
 
-static int test_load_static_model(void)
+static struct RENDER_MODEL_INSTANCE *load_static_model(const char *filename)
 {
-  struct BFF_MODEL_INFO test;
-  if (load_bmf(&test, "data/player.bmf", GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
-    debug("** ERROR: can't load player model from data/player.bmf\n");
-    return 1;
-  }
-  struct RENDER_MODEL *model = alloc_render_model(test.n_gfx_meshes, test.gfx_meshes);
+  struct RENDER_MODEL *model = alloc_render_model();
   if (! model) {
     debug("** ERROR: can't allocate render model\n");
-    return 1;
+    return NULL;
   }
+  struct BFF_MODEL_INFO test;
+  if (load_bmf(&test, filename, GFX_MESH_TYPE_CREATURE, 0, NULL) != 0) {
+    debug("** ERROR: can't load player model from '%s'\n", filename);
+    free_render_model(model);
+    return NULL;
+  }
+  set_render_model_meshes(model, test.n_gfx_meshes, test.gfx_meshes);
   struct RENDER_MODEL_INSTANCE *inst = alloc_render_model_instance(model);
   if (! inst) {
     debug("** ERROR: can't allocate render model instance\n");
-    return 1;
+    return NULL;
   }
 
   mat4_id(inst->matrix);
-  game.creatures[0].inst = inst;
-  return 0;
+  return inst;
 }
 
-static int load_player_model(void)
+static int load_creatures(void)
 {
-  if (test_load_static_model() != 0)
+  struct RENDER_MODEL_INSTANCE *inst;
+
+  inst = load_animated_model("data/Monster.bcf");
+  if (! inst)
     return 1;
+  inst->anim->skel->animations[0].end_time = inst->anim->skel->animations[0].loop_end_time = 1;
+  game.creatures[0].inst = inst;
   
-  if (test_load_animated_model() != 0)
+  inst = load_animated_model("data/test1.bcf");
+  if (! inst)
     return 1;
+  inst->anim->skel->animations[1].end_time = inst->anim->skel->animations[0].loop_end_time = 1.65;
+  mat4_load_translation(inst->matrix, 2, 0, 0);
+  game.creatures[1].inst = inst;
+
+  inst = load_static_model("data/player.bmf");
+  if (! inst)
+    return 1;
+  mat4_load_translation(inst->matrix, -2, 0, 0);
+  game.creatures[2].inst = inst;
   
   return 0;
 }
@@ -279,7 +288,7 @@ int init_game(int width, int height)
   init_camera(&game.camera, width, height);
   game.camera.distance = 6.0;
 
-  if (load_player_model() != 0)
+  if (load_creatures() != 0)
     return 1;
   
   if (init_rooms() != 0)
@@ -394,29 +403,39 @@ static void handle_loaded_assets(void)
 static void update_player_creature_matrix(void)
 {
   struct CREATURE *player = &game.creatures[0];
-  
-  mat4_load_rot_y(player->inst->matrix, player->theta);
-  player->inst->matrix[ 3] += player->pos[0];
-  player->inst->matrix[ 7] += player->pos[1];
-  player->inst->matrix[11] += player->pos[2];
+
+  struct RENDER_MODEL_INSTANCE *inst = game.creatures[0].inst;
+  mat4_load_scale(inst->matrix, 0.001, 0.001, 0.001);
+  float fix[4];
+  mat4_load_rot_x(fix, -M_PI/2); mat4_mul_left(inst->matrix, fix);
+  mat4_load_translation(fix, -1.2, 0.52, 0); mat4_mul_left(inst->matrix, fix);
+  mat4_load_rot_y(fix, M_PI/2); mat4_mul_left(inst->matrix, fix);
+
+  float place[16];
+  mat4_load_rot_y(place, player->theta);
+  place[ 3] += player->pos[0];
+  place[ 7] += player->pos[1];
+  place[11] += player->pos[2];
+
+  mat4_mul_left(inst->matrix, place);
 }
 
 static void update_creatures(void)
 {
-  static float time = 0.0;
-
   update_player_creature_matrix();
 
-  struct CREATURE *box = &game.creatures[1];
-  time += 0.01;
-  while (time > 1.6)
-    time -= 1.6;
-  box->inst->anim->time = time;
-  box->inst->anim->anim_index = 0;
-
   for (int i = 0; i < MAX_CREATURES; i++) {
-    if (game.creatures[i].inst && game.creatures[i].inst->anim)
+    if (game.creatures[i].inst && game.creatures[i].inst->anim) {
+      struct SKEL_ANIMATION_STATE *anim_state = game.creatures[i].inst->anim;
+      struct SKEL_ANIMATION *anim = &anim_state->skel->animations[anim_state->anim_index];
+      if (anim->loop_end_time > anim->loop_start_time) {
+        float time = anim_state->time + 0.025;
+        if (time > anim->loop_end_time)
+          time -= anim->loop_end_time - anim->loop_start_time;
+        anim_state->time = time;
+      }
       update_skeleton_animation_state(game.creatures[i].inst->anim);
+    }
   }
 }
 
