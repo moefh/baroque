@@ -404,12 +404,16 @@ static void update_player_creature_matrix(void)
 {
   struct CREATURE *player = &game.creatures[0];
 
+#if 1
   struct RENDER_MODEL_INSTANCE *inst = game.creatures[0].inst;
   mat4_load_scale(inst->matrix, 0.001, 0.001, 0.001);
-  float fix[4];
+  float fix[16];
   mat4_load_rot_x(fix, -M_PI/2); mat4_mul_left(inst->matrix, fix);
   mat4_load_translation(fix, -1.2, 0.52, 0); mat4_mul_left(inst->matrix, fix);
   mat4_load_rot_y(fix, M_PI/2); mat4_mul_left(inst->matrix, fix);
+#else
+  mat4_id(inst->matrix);
+#endif
 
   float place[16];
   mat4_load_rot_y(place, player->theta);

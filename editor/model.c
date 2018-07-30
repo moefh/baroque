@@ -829,6 +829,15 @@ static int read_skeleton_animations(struct MODEL_READER *reader, struct MODEL_SK
   if (read_skeleton_keyframes(reader, skel, skin, node_to_bone_indices) != 0)
     return 1;
 
+  // TODO: calculate start/end times
+  for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
+    struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
+    model_anim->start_time = 0.0;
+    model_anim->end_time = 0.0;
+    model_anim->loop_start_time = 0.0;
+    model_anim->loop_end_time = 0.0;
+  }
+
 #ifdef DEBUG_MODEL_READER
   for (int anim_index = 0; anim_index < skel->n_animations; anim_index++) {
     struct MODEL_ANIMATION *model_anim = &skel->animations[anim_index];
