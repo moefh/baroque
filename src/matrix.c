@@ -707,3 +707,39 @@ void vec3_rotate_about_axis(float *restrict ret, const float *restrict v, const 
   ret[2] = v[0] * (a[2]*a[0] * (1-c) - a[1]*s)   +   v[1] * (a[2]*a[1] * (1-c) + a[0]*s)    +   v[2] * (c + a[2]*a[2] * (1-c));
 }
 
+void quat_slerp(float *restrict ret, const float *restrict q1, float *restrict q2in, float t)
+{
+  float q2[4];
+  vec4_copy(q2, q2in);
+  
+  float dot = quat_dot(q1, q2);
+  if (dot < 0.0f) {
+    q2[0] = -q2[0];
+    q2[1] = -q2[1];
+    q2[2] = -q2[2];
+    q2[3] = -q2[3];
+    dot = -dot;
+  }
+  
+  if (dot > 0.995f) {
+    ret[0] = q1[0] + t * (q2[0] - q1[0]);
+    ret[1] = q1[1] + t * (q2[1] - q1[1]);
+    ret[2] = q1[2] + t * (q2[2] - q1[2]);
+    ret[3] = q1[3] + t * (q2[3] - q1[3]);
+    quat_normalize(ret);
+    return;
+  }
+  
+  float theta_0 = acos(dot);       // angle between input quaternions
+  float theta = theta_0 * t;       // angle between v0 and result
+  float sin_theta = sin(theta);
+  float sin_theta_0 = sin(theta_0);
+  
+  float s1 = cos(theta) - dot * sin_theta / sin_theta_0;  // sin(theta_0 - theta) / sin(theta_0)
+  float s2 = sin_theta / sin_theta_0;
+
+  ret[0] = s1 * q1[0] + s2 * q2[0]; 
+  ret[1] = s1 * q1[1] + s2 * q2[1];
+  ret[2] = s1 * q1[2] + s2 * q2[2];
+  ret[3] = s1 * q1[3] + s2 * q2[3];
+}

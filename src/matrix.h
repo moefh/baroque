@@ -155,4 +155,21 @@ static inline float snap_to_grid(float val, float grid_spacing)
   return round(val / grid_spacing) * grid_spacing;
 }
 
+// quat:
+void quat_slerp(float *restrict ret, const float *restrict q1, float *restrict q2, float t);
+
+static inline float quat_dot(const float *a, const float *b)
+{
+  return a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+}
+
+static inline void quat_normalize(float *q)
+{
+  float s = 1.0/sqrt(quat_dot(q, q));
+  q[0] *= s;
+  q[1] *= s;
+  q[2] *= s;
+  q[3] *= s;
+}
+
 #endif /* MATRIX_H_FILE */
