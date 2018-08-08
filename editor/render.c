@@ -283,8 +283,8 @@ static void render_grid_tiles(struct GFX_MESH *mesh, float *mat_view_projection,
   float mat_model_view_projection[16];
   mat4_mul(mat_model_view_projection, mat_view_projection, mat_model);
 
-  if (grid_shader.uni_mat_model_view_projection >= 0)
-    GL_CHECK(glUniformMatrix4fv(grid_shader.uni_mat_model_view_projection, 1, GL_TRUE, mat_model_view_projection));
+  if (grid_tiles_shader.uni_mat_model_view_projection >= 0)
+    GL_CHECK(glUniformMatrix4fv(grid_tiles_shader.uni_mat_model_view_projection, 1, GL_TRUE, mat_model_view_projection));
   
   GL_CHECK(glActiveTexture(GL_TEXTURE0));
   GL_CHECK(glBindTexture(GL_TEXTURE_2D, mesh->texture->id));

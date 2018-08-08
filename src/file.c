@@ -4,7 +4,7 @@
 
 #include "file_win32.c"
 
-#elif defined(__unix__)
+#elif defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 
 #include "file_mmap.c"
 
